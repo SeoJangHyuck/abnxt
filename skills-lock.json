@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "skills": {
+    "next-best-practices": {
+      "source": "vercel-labs/next-skills",
+      "sourceType": "github",
+      "skillPath": "skills/next-best-practices/SKILL.md",
+      "computedHash": "f4678aef4ffc10a5ea64a91e57abe5a5081af813b06d58d565caf3e8ef56e26c"
+    },
+    "next-cache-components": {
+      "source": "vercel-labs/next-skills",
+      "sourceType": "github",
+      "skillPath": "skills/next-cache-components/SKILL.md",
+      "computedHash": "f835d8226c28abf012cc013928e2627c8a7a046de61127ef229be1711bd1f255"
+    },
+    "next-upgrade": {
+      "source": "vercel-labs/next-skills",
+      "sourceType": "github",
+      "skillPath": "skills/next-upgrade/SKILL.md",
+      "computedHash": "e3aeb1f9e8a68d24df0c1c2e3c8ab97ede09a7251a2c76988318d02254346979"
+    },
+    "nuxt": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nuxt/SKILL.md",
+      "computedHash": "571d9ea31a6f18b94168894814f20df361773e16de4a6dc675b526aaf6d55a45"
+    },
+    "nuxt-modules": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nuxt-modules/SKILL.md",
+      "computedHash": "628065a8cf5cab196853ff5ef5538d3a7ff553293dde146380ec1b57f33def48"
+    },
+    "pnpm": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/pnpm/SKILL.md",
+      "computedHash": "0e72c2b2563556bc027cd025d0b3e11bf7147f362f4815ac9ad083ccbac55750"
+    },
+    "ts-library": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ts-library/SKILL.md",
+      "computedHash": "4c33b682fad3e3323e4e8c71ee019f380699802030d147469f4564afe04fb867"
+    },
+    "vite": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/vite/SKILL.md",
+      "computedHash": "f6b076920b1a2d8300dd2a2a66962e40c35102231b74af7d336cf47b999ba4a3"
+    },
+    "vitest": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/vitest/SKILL.md",
+      "computedHash": "04ed1b09da8ac778d693ad12fab49b1c48aadfe1758fe13eb4d6de3fdcbb22f4"
+    },
+    "vue": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/vue/SKILL.md",
+      "computedHash": "cb120821c275a351b6e3c154d82cf62a9277b6260c2c30b3101f688928a3428b"
+    },
+    "vueuse": {
+      "source": "onmax/nuxt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/vueuse/SKILL.md",
+      "computedHash": "6a5d44723d96da16c0633b24b2b266d8f486f9fd9e5721d78ab0860777b8484f"
+    },
+    "typescript": {
+      "source": "kad-app-front/claude-plugins/typescript",
+      "sourceType": "local",
+      "skillPath": "skills/conventions/SKILL.md",
+      "computedHash": "63ef5a4b12ff1785cf8e27adf5ce778e699e4e43e0edcddc7dff4a80432d157d"
+    },
+    "scss-bem-naming-and-structure": {
+      "source": "kad-app-front/claude-plugins/scss-bem",
+      "sourceType": "local",
+      "skillPath": "skills/naming-and-structure/SKILL.md",
+      "computedHash": "9ce7b803871e2a48c6719c79ce4653d635c573141c7ec0ed0341b738243dbe0b"
+    },
+    "scss-bem-color-system": {
+      "source": "kad-app-front/claude-plugins/scss-bem",
+      "sourceType": "local",
+      "skillPath": "skills/color-system/SKILL.md",
+      "computedHash": "e115223210dcb1bb8cbad81e55eaaf827cc672557ec8a50811f62221b47e1979"
+    },
+    "scss-bem-component-patterns": {
+      "source": "kad-app-front/claude-plugins/scss-bem",
+      "sourceType": "local",
+      "skillPath": "skills/component-patterns/SKILL.md",
+      "computedHash": "e7eb1aa4a44667a7108e9f5572f70b00b6a34f6a7a870571cac6ac97e8481448"
+    },
+    "scss-bem-responsive": {
+      "source": "kad-app-front/claude-plugins/scss-bem",
+      "sourceType": "local",
+      "skillPath": "skills/responsive/SKILL.md",
+      "computedHash": "ad27a28d8920ec7267a71b83c6fe6c9e7831458f9e4f3d4fcb90637be6b34a4c"
+    },
+    "scss-bem-typography": {
+      "source": "kad-app-front/claude-plugins/scss-bem",
+      "sourceType": "local",
+      "skillPath": "skills/typography/SKILL.md",
+      "computedHash": "479b070dc4c33cfc76bc4acacc828404e1a4a062aadce76d7e30dec609be6348"
+    }
+  }
+}

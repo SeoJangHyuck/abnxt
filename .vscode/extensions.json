@@ -1,0 +1,11 @@
+{
+  "// 안내": "이 프로젝트 권장 확장. VSCode가 워크스페이스 열 때 설치 추천 알림을 띄움.",
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "stylelint.vscode-stylelint",
+    "EditorConfig.EditorConfig",
+    "Vue.volar",
+    "svelte.svelte-vscode"
+  ]
+}

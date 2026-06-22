@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Skill",
+      "Bash",
+      "mcp__plugin_browser_chrome-devtools",
+      "mcp__figma-desktop",
+      "mcp__figma",
+      "mcp__plugin_context7_context7",
+      "mcp__plugin_vue-nuxt_nuxt",
+      "mcp__plugin_nuxt-ui_nuxt-ui"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(*.pem)",
+      "Read(*.key)",
+      "Read(*.p12)",
+      "Read(*.pfx)",
+      "Read(id_rsa)",
+      "Read(id_ed25519)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.npmrc)",
+      "Read(~/.claude/.credentials.json)",
+      "Bash(sudo *)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/*)",
+      "Bash(rm -fr /)",
+      "Bash(rm -fr /*)",
+      "Bash(rm -fr ~)",
+      "Bash(rm -fr ~/*)",
+      "Bash(rm -rf --no-preserve-root *)",
+      "Bash(rm -fr --no-preserve-root *)",
+      "Bash(dd *)",
+      "Bash(mkfs*)",
+      "Bash(shutdown *)",
+      "Bash(reboot *)",
+      "Bash(halt *)",
+      "Bash(poweroff *)"
+    ],
+    "ask": [
+      "mcp__figma__use_figma",
+      "mcp__figma__create_new_file",
+      "mcp__figma__generate_figma_design",
+      "mcp__figma__generate_diagram",
+      "mcp__figma__upload_assets",
+      "mcp__figma__add_code_connect_map",
+      "mcp__figma__send_code_connect_mappings",
+      "mcp__figma-desktop__add_code_connect_map",
+      "mcp__figma-desktop__send_code_connect_mappings"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "next-devtools",
+    "nuxt",
+    "chrome-devtools",
+    "figma-desktop"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-model-record.sh\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/model-banner.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/format.sh\""
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "figma@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  }
+}

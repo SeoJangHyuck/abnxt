@@ -1,0 +1,28 @@
+{
+  "// 안내": "저장 시 Prettier 포맷 + ESLint/Stylelint 자동수정. 프로젝트 설정 파일(eslint.config.mjs 등)을 따름.",
+
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.fixAll.stylelint": "explicit"
+  },
+
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact",
+    "vue"
+  ],
+
+  "stylelint.validate": ["css", "scss", "sass", "vue"],
+  "css.validate": false,
+  "scss.validate": false,
+  "less.validate": false,
+
+  "[vue]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[svelte]": { "editor.defaultFormatter": "svelte.svelte-vscode" },
+
+  "files.eol": "\n"
+}

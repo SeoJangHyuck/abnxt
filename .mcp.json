@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "next-devtools": {
+      "command": "npx",
+      "args": ["-y", "next-devtools-mcp@latest"]
+    },
+    "nuxt": {
+      "type": "http",
+      "url": "https://nuxt.com/mcp"
+    },
+    "chrome-devtools": {
+      "command": "bash",
+      "args": ["${CLAUDE_PROJECT_DIR}/.claude/scripts/chrome-mcp-pool.sh"],
+      "env": {
+        "CHROME_MCP_POOL_SIZE": "5"
+      },
+      "description": "Chrome DevTools MCP (multi-profile pool to avoid SingletonLock conflicts)"
+    },
+    "figma-desktop": {
+      "type": "http",
+      "url": "http://127.0.0.1:3845/mcp"
+    }
+  }
+}
