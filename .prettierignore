@@ -1,0 +1,15 @@
+# 빌드 산출물 / 의존성 / 프레임워크 캐시
+node_modules
+dist
+coverage
+**/.next
+**/.nuxt
+**/.output
+*.tsbuildinfo
+**/next-env.d.ts
+
+# lockfile
+pnpm-lock.yaml
+
+# AI agent skills (포맷터 대상 제외 - 외부 소스)
+.claude/skills
