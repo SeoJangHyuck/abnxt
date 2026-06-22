@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "baseUrl": ".",
+    "paths": {
+      "@abnxt/core": ["../core/src/index.ts"],
+      "@abnxt/core/server": ["../core/src/server.ts"],
+      "@abnxt/core/admin": ["../core/src/admin/index.ts"],
+      "@abnxt/next": ["./src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
