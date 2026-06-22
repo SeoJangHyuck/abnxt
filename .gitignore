@@ -1,0 +1,19 @@
+node_modules
+dist
+coverage
+*.log
+.DS_Store
+
+# framework build outputs (examples)
+.next
+.nuxt
+.output
+*.tsbuildinfo
+
+# local secrets (admin key 등) — .env.example만 커밋
+.env
+.env.local
+!.env.example
+
+# 내부 설계/계획 문서 (repo 비공개)
+docs/superpowers/
