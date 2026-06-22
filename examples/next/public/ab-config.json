@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "experiments": {
+    "homepage-hero": {
+      "name": "Homepage Hero",
+      "active": true,
+      "sticky": true,
+      "variants": [
+        { "key": "A", "weight": 50 },
+        { "key": "B", "weight": 50 }
+      ]
+    }
+  }
+}

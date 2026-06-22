@@ -1,0 +1,21 @@
+{
+  "name": "example-nuxt",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@abnxt/core": "workspace:*",
+    "@abnxt/nuxt": "workspace:*",
+    "nuxt": "^4.4.8",
+    "vue": "^3.5.38"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vue-tsc": "^3.0.0"
+  }
+}
