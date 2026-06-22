@@ -1,0 +1,59 @@
+{
+  "name": "@abnxt/nuxt",
+  "version": "0.0.0",
+  "description": "abnxt Nuxt 4 adapter (Nuxt module)",
+  "type": "module",
+  "main": "./dist/module.mjs",
+  "types": "./dist/types.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.mts",
+      "import": "./dist/module.mjs"
+    },
+    "./server": {
+      "types": "./dist/runtime/server/index.d.ts",
+      "import": "./dist/runtime/server/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/types.d.mts"
+      ],
+      "server": [
+        "./dist/runtime/server/index.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "nuxt-module-build build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@abnxt/core": "workspace:*",
+    "@nuxt/kit": "^4.4.8"
+  },
+  "peerDependencies": {
+    "nuxt": "^4.0.0",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@nuxt/module-builder": "^1.0.2",
+    "@nuxt/schema": "^4.4.8",
+    "@types/node": "^22.10.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.11",
+    "h3": "^1.15.0",
+    "jsdom": "^25.0.1",
+    "nuxt": "^4.4.8",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8",
+    "vue": "^3.5.38",
+    "vue-tsc": "^3.0.0"
+  }
+}
