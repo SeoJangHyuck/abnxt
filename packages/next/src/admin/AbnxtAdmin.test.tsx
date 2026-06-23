@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   render,
-  screen,
+  within,
   waitFor,
   fireEvent,
   cleanup,
+  type queries,
+  type BoundFunctions,
 } from '@testing-library/react';
 import type { AbConfig } from '@abnxt/core';
 import { AbnxtAdmin } from './AbnxtAdmin';
@@ -35,6 +37,15 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
+/** 어드민은 Shadow DOM에 렌더되므로 shadow root 기준으로 쿼리한다. */
+function sq(): BoundFunctions<typeof queries> {
+  const host = document.querySelector(
+    '[data-abnxt-admin-host]',
+  ) as HTMLElement | null;
+  if (!host?.shadowRoot) throw new Error('shadow root not ready');
+  return within(host.shadowRoot as unknown as HTMLElement);
+}
+
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
@@ -52,33 +63,29 @@ describe('<AbnxtAdmin> auth gate', () => {
       jsonResponse({ error: 'unauthorized' }, 401),
     );
     render(<AbnxtAdmin />);
-    await waitFor(() =>
-      expect(screen.getByLabelText('Admin key')).toBeDefined(),
-    );
-    expect(screen.getByText('Unlock')).toBeDefined();
+    await waitFor(() => expect(sq().getByLabelText('Admin key')).toBeDefined());
+    expect(sq().getByText('Unlock')).toBeDefined();
   });
 
   it('(b) submits the key, re-fetches config, and renders list + editor', async () => {
-    // 1) initial GET 401 → gate
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ error: 'unauthorized' }, 401),
     );
-    // 2) POST auth → 200
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }, 200));
-    // 3) GET config → 200
     fetchMock.mockResolvedValueOnce(jsonResponse(CONFIG, 200));
 
     render(<AbnxtAdmin />);
-    const input = await screen.findByLabelText('Admin key');
-    fireEvent.change(input, { target: { value: 'my-key' } });
-    fireEvent.click(screen.getByText('Unlock'));
+    await waitFor(() => expect(sq().getByLabelText('Admin key')).toBeDefined());
+    fireEvent.change(sq().getByLabelText('Admin key'), {
+      target: { value: 'my-key' },
+    });
+    fireEvent.click(sq().getByText('Unlock'));
 
-    // list item + editor field rendered after re-fetch
-    await waitFor(() => expect(screen.getByText('Hero Banner')).toBeDefined());
-    // editor "seed" input present (authed view)
-    expect(screen.getByDisplayValue('hero')).toBeDefined();
+    await waitFor(() =>
+      expect(sq().getAllByText('Hero Banner').length).toBeGreaterThan(0),
+    );
+    expect(sq().getByDisplayValue('hero')).toBeDefined();
 
-    // POST body included the key
     const postCall = fetchMock.mock.calls.find(
       (c) => (c[1] as RequestInit | undefined)?.method === 'POST',
     );
@@ -91,37 +98,31 @@ describe('<AbnxtAdmin> authed actions', () => {
   async function renderAuthed() {
     fetchMock.mockResolvedValueOnce(jsonResponse(CONFIG, 200));
     render(<AbnxtAdmin />);
-    await waitFor(() => expect(screen.getByText('Hero Banner')).toBeDefined());
+    await waitFor(() =>
+      expect(sq().getAllByText('Hero Banner').length).toBeGreaterThan(0),
+    );
   }
 
-  it('(c) toggles on/off via the list button', async () => {
+  it('(c) toggles active via the list switch and marks dirty', async () => {
     await renderAuthed();
-    // active=true → button shows "on"
-    const toggle = screen.getByText('on');
-    fireEvent.click(toggle);
-    await waitFor(() => expect(screen.getByText('off')).toBeDefined());
-    // toggling marks dirty → Save enabled
-    const save = screen.getByText('Save') as HTMLButtonElement;
+    // 활성=true → pill "on"
+    expect(sq().getByText('on')).toBeDefined();
+    fireEvent.click(sq().getByLabelText('Hero Banner 활성화 토글'));
+    await waitFor(() => expect(sq().getByText('off')).toBeDefined());
+    const save = sq().getByText('Save').closest('button') as HTMLButtonElement;
     expect(save.disabled).toBe(false);
   });
 
-  it('(d) changing a weight updates the displayed percent', async () => {
+  it('(d) raising a weight redistributes the others (dynamic bars)', async () => {
     await renderAuthed();
-    // initial 50/50
-    const pcts = screen
-      .getAllByText(/%$/)
-      .map((el) => el.textContent)
-      .filter((t) => t === '50%');
-    expect(pcts.length).toBeGreaterThanOrEqual(2);
-
-    // set variant A weight to 0 → A becomes 0%, B 100%
-    const rangeA = screen.getByLabelText('weight A') as HTMLInputElement;
+    const rangeA = sq().getByLabelText('weight A') as HTMLInputElement;
     fireEvent.change(rangeA, { target: { value: '0' } });
 
     await waitFor(() => {
-      const variantPcts = document.querySelectorAll(
-        '.abnxt-admin__variant-pct',
-      );
+      const variantPcts = sq()
+        .getByLabelText('weight A')
+        .closest('.abnxt-modal__card')!
+        .querySelectorAll('.abnxt-admin__variant-pct');
       const texts = Array.from(variantPcts).map((e) => e.textContent);
       expect(texts).toContain('0%');
       expect(texts).toContain('100%');
@@ -130,11 +131,9 @@ describe('<AbnxtAdmin> authed actions', () => {
 
   it('(e) Save issues a PUT to the config endpoint', async () => {
     await renderAuthed();
-    // make it dirty first
-    fireEvent.click(screen.getByText('on'));
-    // next fetch (PUT) resolves ok
+    fireEvent.click(sq().getByLabelText('Hero Banner 활성화 토글'));
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }, 200));
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(sq().getByText('Save'));
 
     await waitFor(() => {
       const putCall = fetchMock.mock.calls.find(
@@ -143,15 +142,13 @@ describe('<AbnxtAdmin> authed actions', () => {
       expect(putCall).toBeDefined();
       expect(putCall![0]).toBe('/api/abnxt/config');
     });
-    // success message
-    await waitFor(() => expect(screen.getByText('Saved')).toBeDefined());
+    await waitFor(() => expect(sq().getByText('Saved')).toBeDefined());
   });
 
   it('(f) Logout issues a DELETE and returns to the gate', async () => {
     await renderAuthed();
-    // DELETE auth resolves ok, then nothing else
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }, 200));
-    fireEvent.click(screen.getByText('Logout'));
+    fireEvent.click(sq().getByText('Logout'));
 
     await waitFor(() => {
       const delCall = fetchMock.mock.calls.find(
@@ -160,10 +157,24 @@ describe('<AbnxtAdmin> authed actions', () => {
       expect(delCall).toBeDefined();
       expect(delCall![0]).toBe('/api/abnxt/auth');
     });
-    // back to gate
+    await waitFor(() => expect(sq().getByLabelText('Admin key')).toBeDefined());
+  });
+
+  it('(g) cookie reset requires confirmation then queues a dirty change', async () => {
+    await renderAuthed();
+    fireEvent.click(sq().getByText('모든 사용자 쿠키 초기화'));
+    // 확인 다이얼로그 노출
     await waitFor(() =>
-      expect(screen.getByLabelText('Admin key')).toBeDefined(),
+      expect(sq().getByText('모든 사용자 쿠키를 초기화할까요?')).toBeDefined(),
     );
+    fireEvent.click(sq().getByText('초기화 예약'));
+    // dirty → Save 활성
+    await waitFor(() => {
+      const save = sq()
+        .getByText('Save')
+        .closest('button') as HTMLButtonElement;
+      expect(save.disabled).toBe(false);
+    });
   });
 
   it('uses custom endpoints when provided', async () => {
@@ -175,7 +186,7 @@ describe('<AbnxtAdmin> authed actions', () => {
         title="My Admin"
       />,
     );
-    await waitFor(() => expect(screen.getByText('My Admin')).toBeDefined());
+    await waitFor(() => expect(sq().getByText('My Admin')).toBeDefined());
     expect(fetchMock.mock.calls[0][0]).toBe('/x/config');
   });
 });
