@@ -54,3 +54,14 @@ export function removeExperiment(cfg: AbConfig, key: string): AbConfig {
   delete next.experiments[key];
   return next;
 }
+
+/**
+ * 전체 사용자 강제 재배정: resetEpoch를 now로 올린다(불변 반환).
+ * now는 어드민 편집 시점 값(배정 경로 아님 → 비결정성 허용). save 후 방문자 재배정 발동.
+ */
+export function bumpResetEpoch(
+  cfg: AbConfig,
+  now: number = Date.now(),
+): AbConfig {
+  return { ...cfg, resetEpoch: now };
+}

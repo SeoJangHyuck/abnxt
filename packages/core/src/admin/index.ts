@@ -8,13 +8,21 @@ export {
   setField,
   addExperiment,
   removeExperiment,
+  bumpResetEpoch,
 } from './edit';
 export {
   normalizeToPercents,
   addVariant,
   removeVariant,
   setWeight,
+  redistributeWeights,
 } from './weights';
+export {
+  ADMIN_CSS,
+  ADMIN_STYLE_ID,
+  VARIANT_COLORS,
+  variantColor,
+} from './styles';
 export { simulateSplit } from './simulate';
 export { setOverride, clearOverride, type PreviewCookieIO } from './preview';
 export {

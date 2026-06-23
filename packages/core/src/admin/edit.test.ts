@@ -5,6 +5,7 @@ import {
   addExperiment,
   removeExperiment,
   upsertExperiment,
+  bumpResetEpoch,
 } from './edit';
 import type { AbConfig, Experiment } from '../types';
 
@@ -91,5 +92,20 @@ describe('upsertExperiment', () => {
     expect(c.experiments.hero.variants[0].weight).toBe(2);
     expect(c).not.toBe(original);
     expect(original.experiments.hero.variants[0].weight).toBe(1);
+  });
+});
+
+describe('bumpResetEpoch', () => {
+  it('sets resetEpoch to the provided value (immutably)', () => {
+    const original = cfg();
+    const c = bumpResetEpoch(original, 1234);
+    expect(c.resetEpoch).toBe(1234);
+    expect(c).not.toBe(original);
+    expect(original.resetEpoch).toBeUndefined();
+  });
+
+  it('preserves experiments', () => {
+    const c = bumpResetEpoch(cfg(), 1);
+    expect(c.experiments.hero).toBeDefined();
   });
 });

@@ -1,3 +1,6 @@
+/** sticky 쿠키 map 안에서 배정 epoch를 담는 예약 키(실험 키와 구분). */
+export const STICKY_EPOCH_KEY = '__e';
+
 export function parseStickyCookie(
   raw: string | undefined | null,
 ): Record<string, string> {
@@ -32,6 +35,8 @@ export interface StickyWriter {
 export interface StickyWriterOptions {
   /** flush를 예약하는 스케줄러. 기본 queueMicrotask. */
   schedule?: (cb: () => void) => void;
+  /** 현재 config의 resetEpoch. 기록 시 sticky 쿠키에 함께 저장(전체 재배정 추적). */
+  getEpoch?: () => number;
 }
 
 /** 인메모리 누적 + 단일 배치 write로 document.cookie read-modify-write 경합을 방지. */
@@ -48,6 +53,8 @@ export function createStickyWriter(
     if (!pending) return;
     const merged = { ...parseStickyCookie(io.read()), ...pending };
     pending = null;
+    const epoch = opts.getEpoch?.() ?? 0;
+    if (epoch > 0) merged[STICKY_EPOCH_KEY] = String(epoch);
     io.write(serializeStickyCookie(merged));
   };
 

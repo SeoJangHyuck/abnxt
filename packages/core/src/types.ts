@@ -13,6 +13,11 @@ export interface Experiment {
 export interface AbConfig {
   version: 1;
   updatedAt?: string;
+  /**
+   * 전체 사용자 강제 재배정 epoch(타임스탬프, ms). 어드민 "쿠키 초기화"가 설정한다.
+   * sticky 쿠키에 저장된 배정 epoch가 이 값보다 오래되면 배정을 무시하고 재배정한다(1회성).
+   */
+  resetEpoch?: number;
   experiments: Record<string, Experiment>;
 }
 

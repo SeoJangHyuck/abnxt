@@ -24,6 +24,15 @@ describe('loadConfig normalization', () => {
     expect(exp.control).toBe('A');
   });
 
+  it('keeps a positive resetEpoch and drops invalid ones', () => {
+    expect(loadConfig({ ...valid, resetEpoch: 1700 }).resetEpoch).toBe(1700);
+    expect(loadConfig({ ...valid, resetEpoch: 0 }).resetEpoch).toBeUndefined();
+    expect(
+      loadConfig({ ...valid, resetEpoch: 'nope' }).resetEpoch,
+    ).toBeUndefined();
+    expect(loadConfig(valid).resetEpoch).toBeUndefined();
+  });
+
   it('clamps negative weights to 0', () => {
     const cfg = loadConfig({
       version: 1,

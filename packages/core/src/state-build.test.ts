@@ -62,4 +62,46 @@ describe('buildAbState', () => {
     );
     expect(s.config).toEqual(EMPTY_CONFIG);
   });
+
+  it('strips the reserved epoch key from stored assignments', async () => {
+    const s = await buildAbState(
+      deps({
+        getStickyCookie: () =>
+          serializeStickyCookie({ hero: 'A', __e: '1000' }),
+      }),
+    );
+    expect(s.stored).toEqual({ hero: 'A' });
+  });
+
+  it('discards stored assignments older than resetEpoch (force re-assign)', async () => {
+    const s = await buildAbState(
+      deps({
+        loadConfig: async () => ({ ...cfg, resetEpoch: 2000 }),
+        getStickyCookie: () =>
+          serializeStickyCookie({ hero: 'A', __e: '1000' }),
+      }),
+    );
+    expect(s.stored).toEqual({});
+  });
+
+  it('keeps stored assignments at or after resetEpoch', async () => {
+    const s = await buildAbState(
+      deps({
+        loadConfig: async () => ({ ...cfg, resetEpoch: 2000 }),
+        getStickyCookie: () =>
+          serializeStickyCookie({ hero: 'A', __e: '2000' }),
+      }),
+    );
+    expect(s.stored).toEqual({ hero: 'A' });
+  });
+
+  it('discards legacy stored cookies (no epoch) when resetEpoch is set', async () => {
+    const s = await buildAbState(
+      deps({
+        loadConfig: async () => ({ ...cfg, resetEpoch: 2000 }),
+        getStickyCookie: () => serializeStickyCookie({ hero: 'A' }),
+      }),
+    );
+    expect(s.stored).toEqual({});
+  });
 });

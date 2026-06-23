@@ -61,3 +61,31 @@ export function setWeight(
     v.key === key ? { ...v, weight: Math.max(0, weight) } : v,
   );
 }
+
+/**
+ * 동적 가중치: target을 next(0~100)로 두고 나머지를 `100 - next`로 비례 재분배한다.
+ * A를 올리면 나머지 바가 자동으로 줄어 합 100을 유지한다(슬라이더 % 직관).
+ * - 나머지 1개: `100 - next`로 직접.
+ * - 나머지 weight 합 0: 나머지에 균등 분배.
+ */
+export function redistributeWeights(
+  variants: Variant[],
+  key: string,
+  next: number,
+): Variant[] {
+  const clamped = Math.max(0, Math.min(100, next));
+  const others = variants.filter((v) => v.key !== key);
+  if (others.length === 0) {
+    return variants.map((v) => (v.key === key ? { ...v, weight: clamped } : v));
+  }
+  const remaining = 100 - clamped;
+  const otherTotal = others.reduce((s, v) => s + Math.max(0, v.weight), 0);
+  return variants.map((v) => {
+    if (v.key === key) return { ...v, weight: clamped };
+    const share =
+      otherTotal > 0
+        ? (Math.max(0, v.weight) / otherTotal) * remaining
+        : remaining / others.length;
+    return { ...v, weight: share };
+  });
+}

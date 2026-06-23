@@ -99,7 +99,10 @@ export function createAbRuntime(opts: AbRuntimeOptions): AbRuntime {
       read: () => cookieIO.read(STICKY_COOKIE),
       write: (v) => cookieIO.write(STICKY_COOKIE, v),
     },
-    opts.stickySchedule ? { schedule: opts.stickySchedule } : {},
+    {
+      getEpoch: () => opts.getState().config.resetEpoch ?? 0,
+      ...(opts.stickySchedule ? { schedule: opts.stickySchedule } : {}),
+    },
   );
 
   return {

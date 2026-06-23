@@ -62,4 +62,34 @@ describe('createStickyWriter', () => {
     writer.record('new', 'Y');
     expect(parseStickyCookie(stored)).toEqual({ old: 'X', new: 'Y' });
   });
+
+  it('records the epoch alongside assignments when getEpoch > 0', () => {
+    let stored: string | undefined;
+    const writer = createStickyWriter(
+      {
+        read: () => stored,
+        write: (v) => {
+          stored = v;
+        },
+      },
+      { schedule: (cb) => cb(), getEpoch: () => 1234 },
+    );
+    writer.record('exp', 'A');
+    expect(parseStickyCookie(stored)).toEqual({ exp: 'A', __e: '1234' });
+  });
+
+  it('omits the epoch key when getEpoch is 0', () => {
+    let stored: string | undefined;
+    const writer = createStickyWriter(
+      {
+        read: () => stored,
+        write: (v) => {
+          stored = v;
+        },
+      },
+      { schedule: (cb) => cb(), getEpoch: () => 0 },
+    );
+    writer.record('exp', 'A');
+    expect(parseStickyCookie(stored)).toEqual({ exp: 'A' });
+  });
 });

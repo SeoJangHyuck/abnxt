@@ -4,6 +4,7 @@ import {
   addVariant,
   removeVariant,
   setWeight,
+  redistributeWeights,
 } from './weights';
 import type { Variant } from '../types';
 
@@ -110,6 +111,74 @@ describe('setWeight', () => {
     expect(setWeight(vs, 'A', -5)).toEqual([
       { key: 'A', weight: 0 },
       { key: 'B', weight: 10 },
+    ]);
+  });
+});
+
+describe('redistributeWeights', () => {
+  it('keeps the total at 100% when raising one variant (two-way)', () => {
+    const out = redistributeWeights(
+      [
+        { key: 'A', weight: 50 },
+        { key: 'B', weight: 50 },
+      ],
+      'A',
+      70,
+    );
+    expect(out).toEqual([
+      { key: 'A', weight: 70 },
+      { key: 'B', weight: 30 },
+    ]);
+  });
+
+  it('distributes the remainder proportionally across the others', () => {
+    const out = redistributeWeights(
+      [
+        { key: 'A', weight: 0 },
+        { key: 'B', weight: 30 },
+        { key: 'C', weight: 10 },
+      ],
+      'A',
+      60,
+    );
+    // 나머지 40을 B:C = 3:1 비율로 → B 30, C 10
+    expect(out[0]).toEqual({ key: 'A', weight: 60 });
+    expect(out[1].weight).toBeCloseTo(30);
+    expect(out[2].weight).toBeCloseTo(10);
+    expect(normalizeToPercents(out)).toEqual({ A: 60, B: 30, C: 10 });
+  });
+
+  it('splits the remainder evenly when others are all zero', () => {
+    const out = redistributeWeights(
+      [
+        { key: 'A', weight: 0 },
+        { key: 'B', weight: 0 },
+        { key: 'C', weight: 0 },
+      ],
+      'A',
+      40,
+    );
+    expect(out[0].weight).toBe(40);
+    expect(out[1].weight).toBeCloseTo(30);
+    expect(out[2].weight).toBeCloseTo(30);
+  });
+
+  it('clamps the target to 0..100', () => {
+    const out = redistributeWeights(
+      [
+        { key: 'A', weight: 50 },
+        { key: 'B', weight: 50 },
+      ],
+      'A',
+      150,
+    );
+    expect(out[0].weight).toBe(100);
+    expect(out[1].weight).toBe(0);
+  });
+
+  it('sets a single variant directly', () => {
+    expect(redistributeWeights([{ key: 'A', weight: 10 }], 'A', 80)).toEqual([
+      { key: 'A', weight: 80 },
     ]);
   });
 });

@@ -65,6 +65,10 @@ function normalize(
   return {
     version: 1,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined,
+    resetEpoch:
+      typeof raw.resetEpoch === 'number' && raw.resetEpoch > 0
+        ? raw.resetEpoch
+        : undefined,
     experiments,
   };
 }
