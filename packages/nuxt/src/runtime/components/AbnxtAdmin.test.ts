@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { mount, flushPromises } from '@vue/test-utils';
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils';
 import type { AbConfig } from '@abnxt/core';
 import AbnxtAdmin from './AbnxtAdmin.vue';
 
@@ -46,6 +46,30 @@ function makeFetch() {
   });
 }
 
+/** 어드민은 Shadow DOM(Teleport)에 렌더되므로 shadow root 기준으로 조회한다. */
+function shadow(w: VueWrapper): ShadowRoot {
+  const host = w.element as HTMLElement;
+  if (!host.shadowRoot) throw new Error('shadow root not ready');
+  return host.shadowRoot;
+}
+function q<T extends Element = Element>(w: VueWrapper, sel: string): T | null {
+  return shadow(w).querySelector<T>(sel);
+}
+function qa(w: VueWrapper, sel: string): Element[] {
+  return Array.from(shadow(w).querySelectorAll(sel));
+}
+
+async function authenticate(w: VueWrapper): Promise<void> {
+  const input = q<HTMLInputElement>(w, 'input[type="password"]')!;
+  input.value = 'the-admin-key-123456';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await flushPromises();
+  q<HTMLFormElement>(w, 'form')!.dispatchEvent(
+    new Event('submit', { bubbles: true, cancelable: true }),
+  );
+  await flushPromises();
+}
+
 beforeEach(() => {
   vi.stubGlobal('fetch', makeFetch());
 });
@@ -57,61 +81,85 @@ describe('<AbnxtAdmin>', () => {
   it('shows the key gate when GET config returns 401', async () => {
     const w = mount(AbnxtAdmin);
     await flushPromises();
-    expect(w.find('.abnxt-admin__gate').exists()).toBe(true);
-    expect(w.find('input[type="password"]').exists()).toBe(true);
-    expect(w.find('.abnxt-admin__list').exists()).toBe(false);
+    expect(q(w, '.abnxt-admin__gate')).not.toBeNull();
+    expect(q(w, 'input[type="password"]')).not.toBeNull();
+    expect(q(w, '.abnxt-admin__list')).toBeNull();
   });
 
   it('renders list + editor after submitting a valid key', async () => {
     const w = mount(AbnxtAdmin);
     await flushPromises();
-    await w.find('input[type="password"]').setValue('the-admin-key-123456');
-    await w.find('form').trigger('submit.prevent');
-    await flushPromises();
-    // 게이트가 사라지고 리스트/에디터가 보인다.
-    expect(w.find('.abnxt-admin__gate').exists()).toBe(false);
-    expect(w.find('.abnxt-admin__list').exists()).toBe(true);
-    expect(w.text()).toContain('Hero');
-    expect(w.find('.abnxt-admin__editor').exists()).toBe(true);
-    // 첫 실험이 자동 선택되어 에디터에 name 입력이 렌더된다.
-    const nameInput = w.find('.abnxt-admin__field input[type="text"]');
-    expect((nameInput.element as HTMLInputElement).value).toBe('Hero');
+    await authenticate(w);
+    expect(q(w, '.abnxt-admin__gate')).toBeNull();
+    expect(q(w, '.abnxt-admin__list')).not.toBeNull();
+    expect(shadow(w).textContent).toContain('Hero');
+    expect(q(w, '.abnxt-admin__editor')).not.toBeNull();
+    const nameInput = q<HTMLInputElement>(
+      w,
+      '.abnxt-admin__field input[type="text"]',
+    )!;
+    expect(nameInput.value).toBe('Hero');
   });
 
-  it('toggles active via the list on/off button', async () => {
+  it('toggles active via the list switch and marks dirty', async () => {
     const w = mount(AbnxtAdmin);
     await flushPromises();
-    await w.find('input[type="password"]').setValue('the-admin-key-123456');
-    await w.find('form').trigger('submit.prevent');
+    await authenticate(w);
+    const pill = q(w, '.abnxt-admin__list-item .abnxt-admin__pill')!;
+    expect(pill.textContent).toBe('on');
+    const toggle = q<HTMLElement>(
+      w,
+      '.abnxt-admin__list-item .abnxt-admin__switch',
+    )!;
+    toggle.dispatchEvent(new Event('click', { bubbles: true }));
     await flushPromises();
-    // 리스트 active 토글은 on/off 버튼(React/Svelte 원본과 동일).
-    const toggle = w.find(
-      '.abnxt-admin__list-item button[aria-label="active"]',
+    expect(
+      q(w, '.abnxt-admin__list-item .abnxt-admin__pill')!.textContent,
+    ).toBe('off');
+    // dirty → Save 활성
+    const save = qa(w, '.abnxt-admin__btn').find(
+      (b) => b.textContent?.trim() === 'Save',
+    ) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+  });
+
+  it('redistributes weights when a slider changes (dynamic bars)', async () => {
+    const w = mount(AbnxtAdmin);
+    await flushPromises();
+    await authenticate(w);
+    const ranges = qa(
+      w,
+      '.abnxt-admin__variant input[type="range"]',
+    ) as HTMLInputElement[];
+    // A를 0으로 → A 0% / B 100%.
+    ranges[0].value = '0';
+    ranges[0].dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    const pcts = qa(w, '.abnxt-admin__variant .abnxt-admin__variant-pct').map(
+      (n) => n.textContent,
     );
-    expect(toggle.text()).toBe('on');
-    await toggle.trigger('click');
-    expect(toggle.text()).toBe('off');
-    // dirty → Save 버튼 활성 + dirty 클래스.
-    const save = w
-      .findAll('.abnxt-admin__btn')
-      .find((b) => b.text() === 'Save');
-    expect(save?.classes()).toContain('abnxt-admin__btn--dirty');
+    expect(pcts[0]).toBe('0%');
+    expect(pcts[1]).toBe('100%');
   });
 
-  it('updates the percent label when a weight slider changes', async () => {
+  it('queues an all-user reset after confirmation', async () => {
     const w = mount(AbnxtAdmin);
     await flushPromises();
-    await w.find('input[type="password"]').setValue('the-admin-key-123456');
-    await w.find('form').trigger('submit.prevent');
+    await authenticate(w);
+    const resetBtn = qa(w, '.abnxt-admin__btn').find((b) =>
+      b.textContent?.includes('모든 사용자 쿠키 초기화'),
+    ) as HTMLButtonElement;
+    resetBtn.dispatchEvent(new Event('click', { bubbles: true }));
     await flushPromises();
-    const ranges = w.findAll('.abnxt-admin__variant input[type="range"]');
-    // B의 상대 weight를 0으로 → A 100% / B 0%(normalizeToPercents).
-    (ranges[1].element as HTMLInputElement).value = '0';
-    await ranges[1].trigger('input');
-    const pcts = w
-      .findAll('.abnxt-admin__variant .abnxt-admin__variant-pct')
-      .map((n) => n.text());
-    expect(pcts[0]).toBe('100%');
-    expect(pcts[1]).toBe('0%');
+    expect(shadow(w).textContent).toContain('모든 사용자 쿠키를 초기화할까요?');
+    const confirm = qa(w, '.abnxt-admin__confirm .abnxt-admin__btn').find((b) =>
+      b.textContent?.includes('초기화 예약'),
+    ) as HTMLButtonElement;
+    confirm.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushPromises();
+    const save = qa(w, '.abnxt-admin__btn').find(
+      (b) => b.textContent?.trim() === 'Save',
+    ) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
   });
 });
