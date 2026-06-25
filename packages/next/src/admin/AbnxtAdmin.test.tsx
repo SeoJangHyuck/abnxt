@@ -103,14 +103,21 @@ describe('<AbnxtAdmin> authed actions', () => {
     );
   }
 
-  it('(c) toggles active via the list switch and marks dirty', async () => {
+  it('(c) toggles active via the editor switch and enables per-experiment Save', async () => {
     await renderAuthed();
-    // 활성=true → pill "on"
-    expect(sq().getByText('on')).toBeDefined();
-    fireEvent.click(sq().getByLabelText('Hero Banner 활성화 토글'));
-    await waitFor(() => expect(sq().getByText('off')).toBeDefined());
-    const save = sq().getByText('Save').closest('button') as HTMLButtonElement;
-    expect(save.disabled).toBe(false);
+    // 저장 전 에디터 Save 비활성
+    const saveBefore = sq()
+      .getByText('Save')
+      .closest('button') as HTMLButtonElement;
+    expect(saveBefore.disabled).toBe(true);
+    // 에디터 '활성화' 스위치(aria-label 'Active')로 토글 → dirty → Save 활성
+    fireEvent.click(sq().getByLabelText('Active'));
+    await waitFor(() => {
+      const save = sq()
+        .getByText('Save')
+        .closest('button') as HTMLButtonElement;
+      expect(save.disabled).toBe(false);
+    });
   });
 
   it('(d) raising a weight redistributes the others (dynamic bars)', async () => {
@@ -122,7 +129,7 @@ describe('<AbnxtAdmin> authed actions', () => {
       const variantPcts = sq()
         .getByLabelText('weight A')
         .closest('.abnxt-modal__card')!
-        .querySelectorAll('.abnxt-admin__variant-pct');
+        .querySelectorAll('.abnxt-admin__pct');
       const texts = Array.from(variantPcts).map((e) => e.textContent);
       expect(texts).toContain('0%');
       expect(texts).toContain('100%');
@@ -131,7 +138,7 @@ describe('<AbnxtAdmin> authed actions', () => {
 
   it('(e) Save issues a PUT to the config endpoint', async () => {
     await renderAuthed();
-    fireEvent.click(sq().getByLabelText('Hero Banner 활성화 토글'));
+    fireEvent.click(sq().getByLabelText('Active'));
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }, 200));
     fireEvent.click(sq().getByText('Save'));
 
@@ -160,20 +167,70 @@ describe('<AbnxtAdmin> authed actions', () => {
     await waitFor(() => expect(sq().getByLabelText('Admin key')).toBeDefined());
   });
 
-  it('(g) cookie reset requires confirmation then queues a dirty change', async () => {
+  it('(g) cookie reset requires confirmation then saves immediately', async () => {
     await renderAuthed();
-    fireEvent.click(sq().getByText('모든 사용자 쿠키 초기화'));
+    fireEvent.click(sq().getByText('Reset all-user cookies'));
     // 확인 다이얼로그 노출
     await waitFor(() =>
-      expect(sq().getByText('모든 사용자 쿠키를 초기화할까요?')).toBeDefined(),
+      expect(sq().getByText('Reset all user cookies?')).toBeDefined(),
     );
-    fireEvent.click(sq().getByText('초기화 예약'));
-    // dirty → Save 활성
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }, 200));
+    fireEvent.click(sq().getByText('Reset now'));
+    // 전역 동작 → 즉시 PUT 저장
+    await waitFor(() => {
+      const putCall = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+      );
+      expect(putCall).toBeDefined();
+      expect(putCall![0]).toBe('/api/abnxt/config');
+    });
+  });
+
+  it('(h) switching experiments discards unsaved edits', async () => {
+    const TWO: AbConfig = {
+      version: 1,
+      experiments: {
+        hero: { ...CONFIG.experiments.hero },
+        promo: { ...CONFIG.experiments.hero, name: 'Promo' },
+      },
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(TWO, 200));
+    render(<AbnxtAdmin />);
+    await waitFor(() =>
+      expect(sq().getAllByText('Hero Banner').length).toBeGreaterThan(0),
+    );
+    // hero 편집(dirty) → promo 선택 시 폐기 → 다시 hero 선택 시 원복(Save 비활성)
+    fireEvent.click(sq().getByLabelText('Active'));
     await waitFor(() => {
       const save = sq()
         .getByText('Save')
         .closest('button') as HTMLButtonElement;
       expect(save.disabled).toBe(false);
+    });
+    fireEvent.click(sq().getByText('Promo'));
+    await waitFor(() => {
+      const save = sq()
+        .getByText('Save')
+        .closest('button') as HTMLButtonElement;
+      expect(save.disabled).toBe(true);
+    });
+  });
+
+  it('(i) blocks save when 3+ variants exceed 100% total', async () => {
+    await renderAuthed();
+    // 변이 추가 → 3개([50,50,50]=150) → 합 초과 경고 + Save 차단
+    fireEvent.click(sq().getByText('Add variant'));
+    await waitFor(() =>
+      expect(sq().getByText(/Total exceeds 100%/)).toBeDefined(),
+    );
+    const save = sq().getByText('Save').closest('button') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    // C를 0으로 → 합 100 → Save 활성
+    const rangeC = sq().getByLabelText('weight C') as HTMLInputElement;
+    fireEvent.change(rangeC, { target: { value: '0' } });
+    await waitFor(() => {
+      const s = sq().getByText('Save').closest('button') as HTMLButtonElement;
+      expect(s.disabled).toBe(false);
     });
   });
 

@@ -10,23 +10,26 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { AbConfig, Experiment } from '@abnxt/core';
+import { MAX_VARIANTS } from '@abnxt/core';
 import {
   toggleActive,
   setField,
-  addExperiment,
-  normalizeToPercents,
+  weightSummary,
+  weightDisplay,
   addVariant,
   removeVariant,
   redistributeWeights,
+  setWeight,
   bumpResetEpoch,
-  simulateSplit,
-  setOverride,
-  clearOverride,
   serializeConfig,
   parseConfigJson,
   apiStorage,
   variantColor,
   ADMIN_CSS,
+  adminT,
+  detectAdminLang,
+  type AdminLang,
+  type AdminDict,
 } from '@abnxt/core/admin';
 
 /** React/Vue 공통 props(형평성: 동일 이름/기본값). */
@@ -42,9 +45,12 @@ export interface AbnxtAdminProps {
 }
 
 type AuthState = 'loading' | 'gate' | 'authed';
+type T = (
+  key: keyof AdminDict,
+  vars?: Record<string, string | number>,
+) => string;
 
 const EMPTY: AbConfig = { version: 1, experiments: {} };
-const SIM_N = 1000;
 
 /* ── 인라인 SVG 아이콘(의존성 0, currentColor) ──────────────── */
 function Svg({ children, size = 16 }: { children: ReactNode; size?: number }) {
@@ -102,23 +108,6 @@ const IconX = ({ size = 16 }: { size?: number }) => (
     <path d="M6 6l12 12" />
   </Svg>
 );
-const IconEye = () => (
-  <Svg>
-    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-    <circle
-      cx="12"
-      cy="12"
-      r="3"
-    />
-  </Svg>
-);
-const IconEyeOff = () => (
-  <Svg>
-    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-    <path d="M2 2l20 20" />
-  </Svg>
-);
 const IconRefresh = () => (
   <Svg>
     <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
@@ -139,6 +128,13 @@ const IconLock = ({ size = 16 }: { size?: number }) => (
     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
   </Svg>
 );
+const IconHome = () => (
+  <Svg>
+    <path d="M3 9.5L12 3l9 6.5" />
+    <path d="M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10" />
+    <path d="M9 21v-6h6v6" />
+  </Svg>
+);
 
 /** experiments 레코드의 안정적 key 목록(삽입 순서 유지). */
 function expKeys(cfg: AbConfig): string[] {
@@ -157,6 +153,8 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
 
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [config, setConfig] = useState<AbConfig>(EMPTY);
+  // 서버에 저장된 마지막 스냅샷. 실험 전환 시 편집본(config)을 여기로 되돌려 미저장 변경을 폐기.
+  const [savedConfig, setSavedConfig] = useState<AbConfig>(EMPTY);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [msg, setMsg] = useState('');
@@ -165,6 +163,11 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
   const [keyInput, setKeyInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [lang, setLang] = useState<AdminLang>('en');
+
+  // 호스트 페이지 언어 감지(기본 영어, 한국어면 ko). 마운트 후 1회.
+  useEffect(() => setLang(detectAdminLang()), []);
+  const t = useCallback<T>((key, vars) => adminT(lang, key, vars), [lang]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -212,6 +215,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
       const raw: unknown = await res.json();
       const parsed = parseConfigJson(JSON.stringify(raw));
       setConfig(parsed.config);
+      setSavedConfig(parsed.config);
       setSelectedKey((prev) => {
         const keys = expKeys(parsed.config);
         if (prev && keys.includes(prev)) return prev;
@@ -220,12 +224,12 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
       setDirty(false);
       setAuthState('authed');
       if (!parsed.ok && parsed.message)
-        flash(`Loaded with warning: ${parsed.message}`, 'error');
+        flash(adminT(lang, 'loadWarn', { msg: parsed.message }), 'error');
     } catch (err) {
       setAuthState('gate');
       setGateError(err instanceof Error ? err.message : 'Network error');
     }
-  }, [configEndpoint, flash]);
+  }, [configEndpoint, flash, lang]);
 
   useEffect(() => {
     void fetchConfig();
@@ -243,7 +247,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
           body: JSON.stringify({ key: keyInput }),
         });
         if (!res.ok) {
-          setGateError('Invalid key');
+          setGateError(t('invalidKey'));
           return;
         }
         setKeyInput('');
@@ -252,7 +256,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
         setGateError(err instanceof Error ? err.message : 'Network error');
       }
     },
-    [authEndpoint, keyInput, fetchConfig],
+    [authEndpoint, keyInput, fetchConfig, t],
   );
 
   const logout = useCallback(async (): Promise<void> => {
@@ -265,21 +269,32 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
       /* 만료 실패해도 클라 상태는 게이트로 전환 */
     }
     setConfig(EMPTY);
+    setSavedConfig(EMPTY);
     setSelectedKey(null);
     setDirty(false);
     setMsg('');
     setAuthState('gate');
   }, [authEndpoint]);
 
-  const close = useCallback((): void => {
+  /** 실험 선택 전환 — 미저장 편집을 폐기(저장본 복원)하고 알럿/더티 초기화. */
+  const selectExperiment = useCallback(
+    (k: string): void => {
+      if (k === selectedKey) return;
+      setConfig(savedConfig);
+      setDirty(false);
+      setMsg('');
+      setSelectedKey(k);
+    },
+    [savedConfig, selectedKey],
+  );
+
+  // 어드민은 모달이 아니라 페이지 — 닫기 대신 루트('/')로 이동.
+  const goHome = useCallback((): void => {
     if (props.onClose) {
       props.onClose();
       return;
     }
-    if (typeof window !== 'undefined') {
-      if (window.history.length > 1) window.history.back();
-      else window.location.assign('/');
-    }
+    if (typeof window !== 'undefined') window.location.assign('/');
   }, [props]);
 
   /** 편집 결과 적용 공통(core 함수가 반환한 새 config). save 전까지 서버 미반영. */
@@ -294,22 +309,15 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
     setMsg('');
     try {
       await storage.save(config);
+      setSavedConfig(config);
       setDirty(false);
-      flash('Saved', 'success');
+      flash(t('saved'), 'success');
     } catch (err) {
-      flash(err instanceof Error ? err.message : 'Save failed', 'error');
+      flash(err instanceof Error ? err.message : t('saveFailed'), 'error');
     } finally {
       setSaving(false);
     }
-  }, [storage, config, flash]);
-
-  const onAddExperiment = useCallback((): void => {
-    const next = addExperiment(config);
-    const before = new Set(expKeys(config));
-    const added = expKeys(next).find((k) => !before.has(k));
-    applyConfig(next);
-    if (added) setSelectedKey(added);
-  }, [config, applyConfig]);
+  }, [storage, config, flash, t]);
 
   const onExport = useCallback((): void => {
     try {
@@ -322,9 +330,9 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      flash(err instanceof Error ? err.message : 'Export failed', 'error');
+      flash(err instanceof Error ? err.message : t('exportFailed'), 'error');
     }
-  }, [config, flash]);
+  }, [config, flash, t]);
 
   const onImportFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
@@ -335,29 +343,63 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
         const text = await file.text();
         const parsed = parseConfigJson(text);
         if (!parsed.ok) {
-          flash(
-            `Import failed: ${parsed.message ?? 'invalid config'}`,
-            'error',
-          );
+          flash(`${t('importFailed')}: ${parsed.message ?? ''}`, 'error');
           return;
         }
         setConfig(parsed.config);
+        // import는 전체 교체(미저장) — savedConfig도 갱신해 실험 전환 시 폐기되지 않게.
+        setSavedConfig(parsed.config);
         setSelectedKey(expKeys(parsed.config)[0] ?? null);
         setDirty(true);
-        flash('Imported (unsaved)', 'success');
+        flash(t('imported'), 'success');
       } catch (err) {
-        flash(err instanceof Error ? err.message : 'Import failed', 'error');
+        flash(err instanceof Error ? err.message : t('importFailed'), 'error');
       }
     },
-    [flash],
+    [flash, t],
   );
 
-  /** 전체 사용자 강제 재배정(쿠키 초기화). 확인 후 dirty 처리, save 시 반영. */
-  const confirmCookieReset = useCallback((): void => {
-    applyConfig(bumpResetEpoch(config));
+  /** 전체 사용자 강제 재배정(쿠키 초기화) — 전역 동작이라 확인 즉시 저장(실험별 저장과 독립). */
+  const confirmCookieReset = useCallback(async (): Promise<void> => {
     setConfirmReset(false);
-    flash('All-user reset queued — press Save to apply', 'success');
-  }, [config, applyConfig, flash]);
+    setSaving(true);
+    setMsg('');
+    const next = bumpResetEpoch(savedConfig);
+    try {
+      await storage.save(next);
+      setConfig(next);
+      setSavedConfig(next);
+      setDirty(false);
+      flash(t('resetDone'), 'success');
+    } catch (err) {
+      flash(err instanceof Error ? err.message : t('saveFailed'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }, [savedConfig, storage, flash, t]);
+
+  const langToggle = (
+    <div
+      className="abnxt-admin__lang"
+      role="group"
+      aria-label={t('langToggle')}
+    >
+      <button
+        type="button"
+        data-on={lang === 'en'}
+        onClick={() => setLang('en')}
+      >
+        EN
+      </button>
+      <button
+        type="button"
+        data-on={lang === 'ko'}
+        onClick={() => setLang('ko')}
+      >
+        KO
+      </button>
+    </div>
+  );
 
   // ── 화면 컨텐츠 구성 ──────────────────────────────────────
   let content: ReactNode;
@@ -376,6 +418,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
     content = (
       <div className="abnxt-modal__overlay">
         <div className="abnxt-modal__card">
+          <div className="abnxt-admin__gate-lang">{langToggle}</div>
           <div className="abnxt-admin__gate">
             <form
               className="abnxt-admin__gate-card"
@@ -385,17 +428,14 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
                 <IconLock size={22} />
               </div>
               <div className="abnxt-admin__gate-title">{title}</div>
-              <p className="abnxt-admin__gate-text">
-                관리자 키를 입력해 어드민에 접근하세요. 키는 서버에서만 검증되며
-                HMAC 세션 쿠키로 교환됩니다.
-              </p>
+              <p className="abnxt-admin__gate-text">{t('gateText')}</p>
               <input
                 className="abnxt-admin__gate-input"
                 type="password"
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="Admin key"
-                aria-label="Admin key"
+                placeholder={t('adminKey')}
+                aria-label={t('adminKey')}
                 autoComplete="current-password"
               />
               <button
@@ -403,7 +443,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
                 type="submit"
               >
                 <IconLock />
-                Unlock
+                {t('unlock')}
               </button>
               {gateError ? (
                 <div
@@ -442,67 +482,54 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
               <span className="abnxt-modal__logo">
                 <span style={{ fontWeight: 800, fontSize: 13 }}>AB</span>
               </span>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div className="abnxt-modal__title">{title}</div>
-                <div className="abnxt-modal__sub">
-                  A/B 테스트 구성 · 저장 전까지 미반영
-                </div>
+                <div className="abnxt-modal__sub">{t('headerSub')}</div>
               </div>
             </div>
             {dirty ? (
               <span className="abnxt-modal__badge">
                 <span className="abnxt-modal__badge-dot" />
-                미저장 변경
+                {t('unsaved')}
               </span>
             ) : null}
             <div className="abnxt-modal__actions">
+              {langToggle}
               <button
                 className="abnxt-admin__btn abnxt-admin__btn--sm"
                 type="button"
                 onClick={onExport}
-                title="현재 구성을 JSON 파일로 내보내기"
+                title={t('tipExport')}
               >
                 <IconDownload />
-                Export
+                {t('export')}
               </button>
               <button
                 className="abnxt-admin__btn abnxt-admin__btn--sm"
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                title="JSON 파일에서 구성 가져오기(저장 전까지 미반영)"
+                title={t('tipImport')}
               >
                 <IconUpload />
-                Import
-              </button>
-              <button
-                className={
-                  'abnxt-admin__btn abnxt-admin__btn--primary abnxt-admin__btn--sm'
-                }
-                type="button"
-                onClick={() => void save()}
-                disabled={!dirty || saving}
-                title="변경사항을 서버에 저장"
-              >
-                <IconCheck />
-                Save
+                {t('import')}
               </button>
               <button
                 className="abnxt-admin__btn abnxt-admin__btn--ghost abnxt-admin__btn--sm"
                 type="button"
                 onClick={() => void logout()}
-                title="세션 종료"
+                title={t('tipLogout')}
               >
                 <IconPower />
-                Logout
+                {t('logout')}
               </button>
               <button
                 className="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--ghost"
                 type="button"
-                onClick={close}
-                aria-label="Close"
-                title="닫기"
+                onClick={goHome}
+                aria-label={t('home')}
+                title={t('tipHome')}
               >
-                <IconX />
+                <IconHome />
               </button>
             </div>
           </header>
@@ -526,39 +553,52 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
           <div className="abnxt-modal__body">
             <aside className="abnxt-admin__sidebar">
               <div className="abnxt-admin__sidebar-head">
-                <span className="abnxt-admin__sidebar-title">실험 목록</span>
-                <button
-                  className="abnxt-admin__btn abnxt-admin__btn--sm"
-                  type="button"
-                  onClick={onAddExperiment}
-                  title="새 실험 추가"
-                >
-                  <IconPlus />
-                  추가
-                </button>
+                <span className="abnxt-admin__sidebar-title">
+                  {t('listTitle')}
+                </span>
               </div>
               <ExperimentList
                 config={config}
                 keys={keys}
                 selectedKey={selectedKey}
-                onSelect={setSelectedKey}
-                onToggle={(k) => applyConfig(toggleActive(config, k))}
+                onSelect={selectExperiment}
+                t={t}
               />
+              {/* 전역 위험 영역(전체 실험/전체 사용자 재배정) — 실험별 아님 */}
+              <div className="abnxt-admin__sidebar-foot">
+                <div className="abnxt-admin__danger-zone">
+                  <div className="abnxt-admin__danger-title">
+                    {t('secDanger')}
+                  </div>
+                  <div className="abnxt-admin__danger-text">
+                    {t('dangerText')}
+                  </div>
+                  <button
+                    className="abnxt-admin__btn abnxt-admin__btn--danger"
+                    type="button"
+                    onClick={() => setConfirmReset(true)}
+                  >
+                    <IconRefresh />
+                    {t('dangerBtn')}
+                  </button>
+                </div>
+              </div>
             </aside>
 
             {selected && selectedKey ? (
               <ExperimentEditor
+                key={selectedKey}
                 expKey={selectedKey}
                 experiment={selected}
                 config={config}
                 onApply={applyConfig}
-                onMessage={flash}
-                onReset={() => setConfirmReset(true)}
+                dirty={dirty}
+                saving={saving}
+                onSave={() => void save()}
+                t={t}
               />
             ) : (
-              <div className="abnxt-admin__empty">
-                선택된 실험이 없습니다. 왼쪽에서 실험을 추가해 시작하세요.
-              </div>
+              <div className="abnxt-admin__empty">{t('noSelection')}</div>
             )}
           </div>
 
@@ -570,12 +610,10 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
             >
               <div className="abnxt-admin__confirm-card">
                 <div className="abnxt-admin__confirm-title">
-                  모든 사용자 쿠키를 초기화할까요?
+                  {t('confirmTitle')}
                 </div>
                 <div className="abnxt-admin__confirm-text">
-                  모든 방문자의 기존 배정(sticky)이 무효화되어 다음 방문 시
-                  재배정됩니다. 이 작업은 <strong>저장(Save)</strong> 후에
-                  적용됩니다.
+                  {t('confirmText')}
                 </div>
                 <div className="abnxt-admin__confirm-actions">
                   <button
@@ -583,7 +621,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
                     type="button"
                     onClick={() => setConfirmReset(false)}
                   >
-                    취소
+                    {t('cancel')}
                   </button>
                   <button
                     className="abnxt-admin__btn abnxt-admin__btn--danger"
@@ -591,7 +629,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
                     onClick={confirmCookieReset}
                   >
                     <IconRefresh />
-                    초기화 예약
+                    {t('confirmReset')}
                   </button>
                 </div>
               </div>
@@ -607,7 +645,12 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
       ref={hostRef}
       data-abnxt-admin-host=""
     >
-      {shadow ? createPortal(content, shadow as unknown as Element) : null}
+      {shadow
+        ? createPortal(
+            <div className="abnxt-admin">{content}</div>,
+            shadow as unknown as Element,
+          )
+        : null}
     </div>
   );
 }
@@ -618,14 +661,15 @@ interface ListProps {
   keys: string[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
-  onToggle: (key: string) => void;
+  t: T;
 }
 
 function ExperimentList(props: ListProps) {
+  const { t } = props;
   if (props.keys.length === 0) {
     return (
       <div className="abnxt-admin__list">
-        <div className="abnxt-admin__empty">아직 실험이 없습니다.</div>
+        <div className="abnxt-admin__empty">{t('listEmpty')}</div>
       </div>
     );
   }
@@ -633,7 +677,7 @@ function ExperimentList(props: ListProps) {
     <div className="abnxt-admin__list">
       {props.keys.map((key) => {
         const exp = props.config.experiments[key];
-        const pcts = safePercents(exp);
+        const pcts = weightDisplay(exp.variants);
         const split = exp.variants
           .map((v) => `${v.key} ${pcts[v.key] ?? 0}%`)
           .join(' · ');
@@ -644,14 +688,15 @@ function ExperimentList(props: ListProps) {
             type="button"
             className={
               'abnxt-admin__list-item' +
-              (selected ? ' abnxt-admin__list-item--selected' : '')
+              (selected ? ' abnxt-admin__list-item--selected' : '') +
+              (exp.active ? '' : ' abnxt-admin__list-item--inactive')
             }
             onClick={() => props.onSelect(key)}
           >
             <div className="abnxt-admin__list-main">
               <span className="abnxt-admin__list-name">{exp.name || key}</span>
-              <span className="abnxt-admin__list-meta">
-                <span className="abnxt-admin__list-key">{key}</span>
+              <span className="abnxt-admin__list-meta abnxt-admin__list-key">
+                {key}
               </span>
               <span className="abnxt-admin__list-meta">{split}</span>
             </div>
@@ -663,40 +708,13 @@ function ExperimentList(props: ListProps) {
                   : 'abnxt-admin__pill--off')
               }
             >
-              {exp.active ? 'on' : 'off'}
+              {exp.active ? t('active') : t('inactive')}
             </span>
-            <span
-              className="abnxt-admin__switch"
-              role="switch"
-              aria-checked={exp.active}
-              aria-label={`${exp.name || key} 활성화 토글`}
-              tabIndex={0}
-              data-on={exp.active}
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onToggle(key);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  props.onToggle(key);
-                }
-              }}
-            />
           </button>
         );
       })}
     </div>
   );
-}
-
-function safePercents(exp: Experiment): Record<string, number> {
-  try {
-    return normalizeToPercents(exp.variants);
-  } catch {
-    return {};
-  }
 }
 
 /* ── 우측 실험 에디터 ──────────────────────────────────────── */
@@ -705,23 +723,25 @@ interface EditorProps {
   experiment: Experiment;
   config: AbConfig;
   onApply: (next: AbConfig) => void;
-  onMessage: (msg: string, kind?: 'info' | 'error' | 'success') => void;
-  onReset: () => void;
+  dirty: boolean;
+  saving: boolean;
+  onSave: () => void;
+  t: T;
 }
 
 function ExperimentEditor(props: EditorProps) {
-  const { expKey, experiment, config } = props;
+  const { expKey, experiment, config, dirty, saving, onSave, t } = props;
 
-  const percents = useMemo(() => safePercents(experiment), [experiment]);
-
-  const sim = useMemo<Record<string, number>>(() => {
-    try {
-      return simulateSplit(experiment, SIM_N);
-    } catch {
-      return {};
-    }
-  }, [experiment]);
-  const simMax = Math.max(1, ...Object.values(sim));
+  // 가중치 정책·표시값은 core 공유 헬퍼(weightSummary/weightDisplay)로 — 어댑터 간 동일 보장.
+  const percents = useMemo(
+    () => weightDisplay(experiment.variants),
+    [experiment],
+  );
+  const {
+    autoBalance,
+    sum: weightSum,
+    over: weightOver,
+  } = useMemo(() => weightSummary(experiment.variants), [experiment]);
 
   const applyVariants = useCallback(
     (variants: Experiment['variants']): void => {
@@ -739,27 +759,32 @@ function ExperimentEditor(props: EditorProps) {
   return (
     <div className="abnxt-admin__editor">
       <div className="abnxt-admin__editor-head">
-        <div style={{ marginRight: 'auto' }}>
+        <div style={{ marginRight: 'auto', minWidth: 0 }}>
           <div className="abnxt-admin__editor-title">
             {experiment.name || expKey}
           </div>
           <div className="abnxt-admin__editor-key">{expKey}</div>
+          {experiment.description ? (
+            <p className="abnxt-admin__editor-desc">{experiment.description}</p>
+          ) : null}
         </div>
-        <span
-          className={
-            'abnxt-admin__pill ' +
-            (experiment.active
-              ? 'abnxt-admin__pill--on'
-              : 'abnxt-admin__pill--off')
-          }
-        >
-          {experiment.active ? '활성' : '비활성'}
-        </span>
+        <div className="abnxt-admin__editor-actions">
+          <button
+            className="abnxt-admin__btn abnxt-admin__btn--primary"
+            type="button"
+            onClick={onSave}
+            disabled={!dirty || saving || weightOver}
+            title={t('tipSave')}
+          >
+            <IconCheck />
+            {t('save')}
+          </button>
+        </div>
       </div>
 
       {/* 기본 설정 */}
       <section className="abnxt-admin__section">
-        <div className="abnxt-admin__section-title">기본 설정</div>
+        <div className="abnxt-admin__section-title">{t('secBasic')}</div>
 
         <div className="abnxt-admin__field">
           <div className="abnxt-admin__field-head">
@@ -767,7 +792,7 @@ function ExperimentEditor(props: EditorProps) {
               className="abnxt-admin__label"
               htmlFor="abnxt-f-name"
             >
-              이름
+              {t('fName')}
             </label>
           </div>
           <input
@@ -779,20 +804,41 @@ function ExperimentEditor(props: EditorProps) {
               props.onApply(setField(config, expKey, { name: e.target.value }))
             }
           />
-          <p className="abnxt-admin__hint">
-            대시보드/분석에 표시되는 사람이 읽는 이름입니다.
-          </p>
+          <p className="abnxt-admin__hint">{t('hName')}</p>
+        </div>
+
+        <div className="abnxt-admin__field">
+          <div className="abnxt-admin__field-head">
+            <label
+              className="abnxt-admin__label"
+              htmlFor="abnxt-f-desc"
+            >
+              {t('fDescription')}
+            </label>
+          </div>
+          <textarea
+            id="abnxt-f-desc"
+            className="abnxt-admin__textarea"
+            value={experiment.description ?? ''}
+            onChange={(e) =>
+              props.onApply(
+                setField(config, expKey, { description: e.target.value }),
+              )
+            }
+          />
+          <p className="abnxt-admin__hint">{t('hDescription')}</p>
         </div>
 
         <div className="abnxt-admin__field abnxt-admin__field--inline">
-          <div className="abnxt-admin__field-head">
-            <label className="abnxt-admin__label">활성화</label>
+          <div className="abnxt-admin__field-text">
+            <label className="abnxt-admin__label">{t('fActive')}</label>
+            <p className="abnxt-admin__hint">{t('hActive')}</p>
           </div>
           <span
             className="abnxt-admin__switch"
             role="switch"
             aria-checked={experiment.active}
-            aria-label="활성화"
+            aria-label={t('fActive')}
             tabIndex={0}
             data-on={experiment.active}
             onClick={() => props.onApply(toggleActive(config, expKey))}
@@ -804,23 +850,17 @@ function ExperimentEditor(props: EditorProps) {
             }}
           />
         </div>
-        <p
-          className="abnxt-admin__hint"
-          style={{ marginTop: -8 }}
-        >
-          끄면 모든 방문자에게 control 변이가 강제되고 노출 이벤트가 발생하지
-          않습니다. (키 삭제 대신 비활성화로 운영)
-        </p>
 
         <div className="abnxt-admin__field abnxt-admin__field--inline">
-          <div className="abnxt-admin__field-head">
-            <label className="abnxt-admin__label">Sticky</label>
+          <div className="abnxt-admin__field-text">
+            <label className="abnxt-admin__label">{t('fSticky')}</label>
+            <p className="abnxt-admin__hint">{t('hSticky')}</p>
           </div>
           <span
             className="abnxt-admin__switch"
             role="switch"
             aria-checked={experiment.sticky}
-            aria-label="sticky"
+            aria-label={t('fSticky')}
             tabIndex={0}
             data-on={experiment.sticky}
             onClick={() =>
@@ -838,12 +878,6 @@ function ExperimentEditor(props: EditorProps) {
             }}
           />
         </div>
-        <p
-          className="abnxt-admin__hint"
-          style={{ marginTop: -8 }}
-        >
-          켜면 한 번 배정된 변이가 쿠키에 저장되어 재방문 시 유지됩니다.
-        </p>
 
         <div className="abnxt-admin__field">
           <div className="abnxt-admin__field-head">
@@ -851,7 +885,7 @@ function ExperimentEditor(props: EditorProps) {
               className="abnxt-admin__label"
               htmlFor="abnxt-f-seed"
             >
-              Seed
+              {t('fSeed')}
             </label>
           </div>
           <input
@@ -859,14 +893,10 @@ function ExperimentEditor(props: EditorProps) {
             className="abnxt-admin__input"
             type="text"
             value={experiment.seed}
-            onChange={(e) =>
-              props.onApply(setField(config, expKey, { seed: e.target.value }))
-            }
+            readOnly
+            aria-readonly="true"
           />
-          <p className="abnxt-admin__hint">
-            결정적 해시 시드. 같은 방문자라도 시드가 다르면 다른 실험에
-            독립적으로 배정됩니다.
-          </p>
+          <p className="abnxt-admin__hint">{t('hSeed')}</p>
         </div>
 
         <div className="abnxt-admin__field">
@@ -875,7 +905,7 @@ function ExperimentEditor(props: EditorProps) {
               className="abnxt-admin__label"
               htmlFor="abnxt-f-control"
             >
-              Control
+              {t('fControl')}
             </label>
           </div>
           <select
@@ -897,177 +927,108 @@ function ExperimentEditor(props: EditorProps) {
               </option>
             ))}
           </select>
-          <p className="abnxt-admin__hint">
-            기준(대조) 변이. 비활성/폴백 시 이 변이가 사용됩니다.
-          </p>
+          <p className="abnxt-admin__hint">{t('hControl')}</p>
         </div>
       </section>
 
-      {/* 변이 + 동적 가중치 */}
+      {/* 변이 + 가중치 */}
       <section className="abnxt-admin__section">
-        <div className="abnxt-admin__section-title">변이 & 가중치</div>
-        <p
-          className="abnxt-admin__hint"
-          style={{ marginBottom: 12 }}
-        >
-          슬라이더로 비중(%)을 조정하면 나머지 변이가 자동으로 비례 조정되어
-          합이 항상 100%로 유지됩니다.
+        <div className="abnxt-admin__section-title">{t('secVariants')}</div>
+        <p className="abnxt-admin__section-intro">
+          {autoBalance ? t('hVariants') : t('hVariantsManual')}
         </p>
-        {experiment.variants.map((v, i) => (
-          <div
-            key={v.key}
-            className="abnxt-admin__variant"
-          >
-            <span
-              className="abnxt-admin__variant-key"
-              style={{ background: variantColor(i) }}
+        {experiment.variants.map((v, i) => {
+          const shown = percents[v.key] ?? 0;
+          return (
+            <div
+              key={v.key}
+              className="abnxt-admin__variant"
             >
-              {v.key}
-            </span>
-            <div className="abnxt-admin__variant-track">
-              <div className="abnxt-admin__variant-top">
+              <span
+                className="abnxt-admin__variant-key"
+                style={{ background: variantColor(i) }}
+              >
+                {v.key}
+              </span>
+              <div className="abnxt-admin__variant-track">
                 <div className="abnxt-admin__bar">
                   <span
                     className="abnxt-admin__bar-fill"
                     style={{
-                      width: `${percents[v.key] ?? 0}%`,
+                      width: `${Math.min(100, shown)}%`,
                       background: variantColor(i),
                     }}
                   />
+                  <input
+                    className="abnxt-admin__range"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={shown}
+                    aria-label={`weight ${v.key}`}
+                    style={{ color: variantColor(i) }}
+                    onChange={(e) =>
+                      applyVariants(
+                        autoBalance
+                          ? redistributeWeights(
+                              experiment.variants,
+                              v.key,
+                              Number(e.target.value),
+                            )
+                          : setWeight(
+                              experiment.variants,
+                              v.key,
+                              Number(e.target.value),
+                            ),
+                      )
+                    }
+                  />
                 </div>
-                <span className="abnxt-admin__variant-pct">
-                  {percents[v.key] ?? 0}%
-                </span>
+                <span className="abnxt-admin__pct">{shown}%</span>
               </div>
-              <input
-                className="abnxt-admin__range"
-                type="range"
-                min={0}
-                max={100}
-                value={percents[v.key] ?? 0}
-                aria-label={`weight ${v.key}`}
-                onChange={(e) =>
-                  applyVariants(
-                    redistributeWeights(
-                      experiment.variants,
-                      v.key,
-                      Number(e.target.value),
-                    ),
-                  )
-                }
-              />
-            </div>
-            <div className="abnxt-admin__variant-actions">
-              <button
-                className="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--ghost"
-                type="button"
-                onClick={() => {
-                  setOverride(expKey, v.key);
-                  props.onMessage(`Preview: ${expKey} → ${v.key}`, 'info');
-                }}
-                aria-label={`preview ${v.key}`}
-                title="이 변이로 미리보기(내 브라우저 override 쿠키)"
-              >
-                <IconEye />
-              </button>
-              <button
-                className="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--ghost"
-                type="button"
-                onClick={() => {
-                  clearOverride(expKey);
-                  props.onMessage(`Preview cleared: ${expKey}`, 'info');
-                }}
-                aria-label={`clear preview ${v.key}`}
-                title="미리보기 해제"
-              >
-                <IconEyeOff />
-              </button>
-              <button
-                className="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--danger"
-                type="button"
-                aria-label={`remove ${v.key}`}
-                title="변이 제거"
-                disabled={experiment.variants.length <= 1}
-                onClick={() =>
-                  applyVariants(removeVariant(experiment.variants, v.key))
-                }
-              >
-                <IconX />
-              </button>
-            </div>
-          </div>
-        ))}
-        <button
-          className="abnxt-admin__btn"
-          type="button"
-          onClick={() => applyVariants(addVariant(experiment.variants))}
-          style={{ marginTop: 4 }}
-        >
-          <IconPlus />
-          변이 추가
-        </button>
-      </section>
-
-      {/* 시뮬레이션 */}
-      <section className="abnxt-admin__section">
-        <div className="abnxt-admin__section-title">
-          배정 시뮬레이션 ({SIM_N.toLocaleString()}명)
-        </div>
-        <div className="abnxt-admin__sim">
-          {experiment.variants.map((v, i) => {
-            const count = sim[v.key] ?? 0;
-            const pct = Math.round((count / SIM_N) * 100);
-            return (
-              <div
-                key={v.key}
-                className="abnxt-admin__sim-row"
-              >
-                <span
-                  className="abnxt-admin__variant-key"
-                  style={{ background: variantColor(i), width: 24, height: 24 }}
+              <div className="abnxt-admin__variant-actions">
+                <button
+                  className="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--danger"
+                  type="button"
+                  aria-label={`remove ${v.key}`}
+                  title={t('tipRemoveVariant')}
+                  disabled={experiment.variants.length <= 1}
+                  onClick={() =>
+                    applyVariants(removeVariant(experiment.variants, v.key))
+                  }
                 >
-                  {v.key}
-                </span>
-                <div className="abnxt-admin__sim-track">
-                  <span
-                    className="abnxt-admin__sim-bar"
-                    style={{
-                      width: `${(count / simMax) * 100}%`,
-                      background: variantColor(i),
-                    }}
-                  />
-                </div>
-                <span className="abnxt-admin__sim-val abnxt-admin__variant-pct">
-                  {pct}%
-                </span>
+                  <IconX />
+                </button>
               </div>
-            );
-          })}
-        </div>
-        <p
-          className="abnxt-admin__hint"
-          style={{ marginTop: 8 }}
-        >
-          가상 방문자 {SIM_N.toLocaleString()}명을 결정적 해시로 배정한 예상
-          분포입니다.
-        </p>
-      </section>
-
-      {/* 위험 영역 */}
-      <section className="abnxt-admin__danger-zone">
-        <div className="abnxt-admin__danger-title">위험 영역</div>
-        <div className="abnxt-admin__danger-text">
-          모든 사용자의 배정 쿠키를 초기화하여 전체 재배정을 강제합니다. 저장 후
-          적용됩니다.
-        </div>
-        <button
-          className="abnxt-admin__btn abnxt-admin__btn--danger"
-          type="button"
-          onClick={props.onReset}
-        >
-          <IconRefresh />
-          모든 사용자 쿠키 초기화
-        </button>
+            </div>
+          );
+        })}
+        {!autoBalance ? (
+          <div
+            className={
+              'abnxt-admin__weight-total' +
+              (weightOver ? ' abnxt-admin__weight-total--error' : '')
+            }
+          >
+            <span>{t('weightTotal', { sum: weightSum })}</span>
+            {weightOver ? <span>{t('weightOver')}</span> : null}
+          </div>
+        ) : null}
+        {experiment.variants.length < MAX_VARIANTS ? (
+          <button
+            className="abnxt-admin__btn"
+            type="button"
+            onClick={() => applyVariants(addVariant(experiment.variants))}
+            style={{ marginTop: 4 }}
+          >
+            <IconPlus />
+            {t('addVariant')}
+          </button>
+        ) : (
+          <p className="abnxt-admin__hint">
+            {t('maxVariants', { n: MAX_VARIANTS })}
+          </p>
+        )}
       </section>
     </div>
   );
