@@ -9,7 +9,7 @@ const PATH = join(process.cwd(), 'public/ab-config.json');
 const route = createAbnxtConfigRoute({
   storage: fsAdminStorage({ path: PATH }),
   auth: abnxtCookieAuth({
-    secret: process.env.ABNXT_ADMIN_KEY ?? 'dev-admin-key-change-me',
+    secret: process.env.ABNXT_ADMIN_KEY ?? '',
     cookieName: 'abnxt_admin',
   }),
 });
