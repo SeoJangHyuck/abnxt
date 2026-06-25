@@ -162,6 +162,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
   const [gateError, setGateError] = useState('');
   const [keyInput, setKeyInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [gateBusy, setGateBusy] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [lang, setLang] = useState<AdminLang>('en');
 
@@ -239,6 +240,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
     async (e: React.FormEvent): Promise<void> => {
       e.preventDefault();
       setGateError('');
+      setGateBusy(true);
       try {
         const res = await fetch(authEndpoint, {
           method: 'POST',
@@ -254,6 +256,8 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
         await fetchConfig();
       } catch (err) {
         setGateError(err instanceof Error ? err.message : 'Network error');
+      } finally {
+        setGateBusy(false);
       }
     },
     [authEndpoint, keyInput, fetchConfig, t],
@@ -441,6 +445,7 @@ export function AbnxtAdmin(props: AbnxtAdminProps) {
               <button
                 className="abnxt-admin__btn abnxt-admin__btn--primary"
                 type="submit"
+                disabled={gateBusy}
               >
                 <IconLock />
                 {t('unlock')}

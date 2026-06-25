@@ -109,6 +109,7 @@ const messageKind = ref<'info' | 'error' | 'success'>('info');
 const gateKey = ref('');
 const gateError = ref<string | null>(null);
 const gateBusy = ref(false);
+const saving = ref(false);
 const confirmReset = ref(false);
 
 // 호스트 페이지 언어 감지(기본 영어, 한국어면 ko). t는 lang.value를 읽어 렌더 시 반응.
@@ -335,6 +336,7 @@ async function onConfirmReset(): Promise<void> {
   confirmReset.value = false;
   if (!base) return;
   const next = bumpResetEpoch(base);
+  saving.value = true;
   try {
     await storage.value.save(next);
     config.value = next;
@@ -343,6 +345,8 @@ async function onConfirmReset(): Promise<void> {
     flash(t('resetDone'), 'success');
   } catch (e) {
     flash(`${t('saveFailed')}: ${(e as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -351,6 +355,7 @@ async function onConfirmReset(): Promise<void> {
 async function onSave(): Promise<void> {
   const c = config.value;
   if (!c) return;
+  saving.value = true;
   try {
     await storage.value.save(c);
     savedConfig.value = c;
@@ -358,6 +363,8 @@ async function onSave(): Promise<void> {
     flash(t('saved'), 'success');
   } catch (e) {
     flash(`${t('saveFailed')}: ${(e as Error).message}`, 'error');
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -683,7 +690,7 @@ function onImportFile(e: Event): void {
                     <button
                       class="abnxt-admin__btn abnxt-admin__btn--primary"
                       type="button"
-                      :disabled="!dirty || weightOver"
+                      :disabled="!dirty || weightOver || saving"
                       :title="t('tipSave')"
                       @click="onSave"
                     >

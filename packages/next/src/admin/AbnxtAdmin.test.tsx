@@ -92,6 +92,30 @@ describe('<AbnxtAdmin> auth gate', () => {
     expect(postCall).toBeDefined();
     expect(postCall![1]?.body).toContain('my-key');
   });
+
+  it('(b2) disables Unlock while the key submit is in flight (no duplicate submit)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: 'unauthorized' }, 401),
+    );
+    let resolvePost: (v: Response) => void = () => {};
+    fetchMock.mockReturnValueOnce(
+      new Promise<Response>((r) => {
+        resolvePost = r;
+      }),
+    );
+    render(<AbnxtAdmin />);
+    await waitFor(() => expect(sq().getByLabelText('Admin key')).toBeDefined());
+    fireEvent.change(sq().getByLabelText('Admin key'), {
+      target: { value: 'my-key' },
+    });
+    const unlock = sq()
+      .getByText('Unlock')
+      .closest('button') as HTMLButtonElement;
+    expect(unlock.disabled).toBe(false);
+    fireEvent.click(unlock);
+    await waitFor(() => expect(unlock.disabled).toBe(true));
+    resolvePost(jsonResponse({ ok: true }, 200));
+  });
 });
 
 describe('<AbnxtAdmin> authed actions', () => {

@@ -143,6 +143,52 @@ describe('<AbnxtAdmin>', () => {
     expect(pcts[1]).toBe('100%');
   });
 
+  it('disables Save while a save is in flight (no duplicate submit)', async () => {
+    let resolveSave: () => void = () => {};
+    let authed = false;
+    const slowFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.includes('/auth') && method === 'POST') {
+        authed = true;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (url.includes('/config') && method === 'GET')
+        return authed
+          ? new Response(JSON.stringify(config), { status: 200 })
+          : new Response(JSON.stringify({ error: 'unauthorized' }), {
+              status: 401,
+            });
+      if (url.includes('/config') && method === 'PUT') {
+        await new Promise<void>((r) => {
+          resolveSave = r;
+        });
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+    vi.stubGlobal('fetch', slowFetch);
+
+    const w = mount(AbnxtAdmin);
+    await flushPromises();
+    await authenticate(w);
+    // 토글로 dirty 유발 → Save 활성
+    q<HTMLElement>(
+      w,
+      '.abnxt-admin__editor .abnxt-admin__switch',
+    )!.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushPromises();
+    const save = qa(w, '.abnxt-admin__btn').find(
+      (b) => b.textContent?.trim() === 'Save',
+    ) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    // 저장 시작 → in-flight 동안 비활성(중복 제출 방지)
+    save.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushPromises();
+    expect(save.disabled).toBe(true);
+    resolveSave();
+    await flushPromises();
+  });
+
   it('applies an all-user reset immediately on confirmation', async () => {
     const w = mount(AbnxtAdmin);
     await flushPromises();
