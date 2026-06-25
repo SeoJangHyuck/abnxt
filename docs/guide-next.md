@@ -113,6 +113,8 @@ export function CTA() {
 
 > `isReady`는 config가 스냅샷에 포함되어 첫 렌더부터 확정이므로 항상 `true`입니다(렌더 게이트로 쓰지 마세요 — SSR/CSR 불일치 유발).
 
+> 변이 키는 `@abnxt/core`의 `VariantKey`로도 비교할 수 있습니다 — `import { VariantKey } from '@abnxt/core'` 후 `variant === VariantKey.B`. 문자열 리터럴 오타를 줄이고 싶을 때 권장합니다.
+
 ### 서버 컴포넌트(RSC) — `getVariant`
 
 ```tsx
@@ -176,7 +178,17 @@ export default function AbAdminPage() {
 }
 ```
 
-`<AbnxtAdmin>`은 마운트 시 config API를 호출하고, 미인증(401)이면 키 입력 폼을 보여줍니다. 인증 후 실험 목록·편집·시뮬레이션·Preview·Export/Import가 노출됩니다(편집 로직은 `@abnxt/core/admin` 공유). 아래 7장의 auth/config 라우트가 필요합니다.
+`<AbnxtAdmin>`은 마운트 시 config API를 호출하고, 미인증(401)이면 키 입력 폼을 보여줍니다. 호스트 CSS와 격리하기 위해 **Shadow DOM**(`createPortal`)으로 렌더되는 풀스크린 페이지입니다(모달 아님 — 우상단 **홈 버튼**으로 `/` 이동). 아래 7장의 auth/config 라우트가 필요합니다.
+
+인증 후 화면(편집 로직은 `@abnxt/core/admin` 공유):
+
+- **실험 목록** — 선택 전용(비활성은 흐림 + 상태 배지). 항목 전환 시 우측 편집기가 부드럽게 전환됩니다.
+- **기본 설정** — 이름 · **설명(`description`)** · 활성화 · sticky · **Seed(읽기 전용)** · control.
+- **변이 & 가중치** — 변이 **2개=자동 비례**(합 100% 유지), **3개 이상=자유 입력**(합 100% 초과 시 경고 + 저장 차단, 최대 5개).
+- **실험 단위 저장** — 한 실험만 편집·저장. 다른 실험 선택 시 미저장 변경은 폐기됩니다.
+- **언어 토글(EN/KO)** — 기본 영어, 호스트가 한국어면 자동 한국어. **전체 사용자 재배정**(쿠키 초기화) · **Export/Import**.
+
+> 어드민 경로는 자유입니다. i18n(예: `app/[locale]/ab-admin/page.tsx`)을 쓰면 로케일 프리픽스 경로(`/{locale}/ab-admin`)가 됩니다. 호스트에 전역 인증 가드가 있으면 어드민 경로도 그 가드를 거치므로(앱 로그인 후 abnxt 키), 필요 시 가드에서 경로 예외를 두세요.
 
 ## 7. 어드민 인증 + 라이브 저장
 

@@ -43,6 +43,10 @@ export default defineNuxtConfig({
 
 > `config`는 서버에서 로드되어 SSR 스냅샷으로 클라에 hydration됩니다(`config`는 비밀로 취급하지 마세요). 정적/SPA 모드에서 SSR 스냅샷이 없으면 클라는 빈 config로 폴백(전부 control)합니다.
 
+> **라이브 반영(어드민 편집):** 서버는 어드민이 읽고 쓰는 파일(`admin.configPath`, 기본 `.data/abnxt-config.json`)이 **존재하면 그 파일을 우선** 로드하고, 없으면 위 인라인 `config`로 폴백합니다. 즉 인라인 `config`는 **초기 시드/폴백**이고, 어드민에서 저장하면 다음 요청부터 라이브 배정에 즉시 반영됩니다(Next의 `public/ab-config.json` 공유와 동등). 어드민에 동일 실험이 처음부터 보이게 하려면 인라인 `config`와 같은 내용으로 `.data/abnxt-config.json`을 시드해 두세요.
+
+> **버전 무관:** `@abnxt/nuxt`는 `@nuxt/kit`을 `^4.0.0`(peer `nuxt ^4.0.0`와 동일 범위)으로만 의존하므로 호스트의 nuxt 버전을 끌어올리지 않습니다.
+
 ## 3. 변이 사용
 
 ### `<Experiment>` — named slots (관용적)
@@ -78,6 +82,8 @@ const { variant, source, isReady } = useExperiment('cta-color');
 노출은 클라 마운트 시 1회 발화됩니다(세션당 실험별 중복 제거). SSR 중에는 발화하지 않으므로 깜빡임 없이 렌더만 됩니다.
 
 > `isReady`는 항상 `true`(첫 렌더부터 변이 확정). 렌더 게이트로 쓰지 마세요.
+
+> 변이 키는 `@abnxt/core`의 `VariantKey`로도 비교할 수 있습니다 — `import { VariantKey } from '@abnxt/core'` 후 `variant === VariantKey.B`(컴포저블 반환은 `ComputedRef`이므로 `variant.value === VariantKey.B`). 리터럴 오타 방지에 유용합니다.
 
 ## 4. 분석 연동
 
@@ -121,11 +127,17 @@ export default defineNuxtConfig({
 
 모듈이 자동 등록하는 것:
 
-- 어드민 페이지 `/abnxt-admin`(`<AbnxtAdmin>` 렌더).
+- 어드민 페이지 `/abnxt-admin`(`<AbnxtAdmin>` 렌더). **i18n `strategy: 'prefix'`면 로케일 프리픽스 경로**(`/{locale}/abnxt-admin`, 예: `/en/abnxt-admin`)가 됩니다.
 - 서버 라우트 `/api/abnxt/auth`(키→세션) + `/api/abnxt/config`(GET/PUT).
 - `<AbnxtAdmin>` 컴포넌트(수동 페이지로도 사용 가능, auto-import).
 
-`<AbnxtAdmin>`은 미인증 시 키 입력 폼을 보여주고, 키 검증 후 세션 쿠키로 실험 목록·편집·시뮬레이션·Preview·Export/Import를 제공합니다(편집 로직은 `@abnxt/core/admin` 공유).
+`<AbnxtAdmin>`은 미인증 시 키 입력 폼을 보여주고, 키 검증 후 세션 쿠키로 진입합니다. Shadow DOM(`<Teleport>`)으로 렌더되는 풀스크린 페이지이며(모달 아님 — 우상단 홈 버튼), 화면은 Next와 동일합니다(편집 로직·문구 `@abnxt/core/admin` 공유):
+
+- **실험 목록**(선택 전용·비활성 흐림) · **기본 설정**(이름·설명·활성·sticky·Seed[읽기전용]·control)
+- **변이 & 가중치**(2개=자동 비례 / 3개 이상=자유 입력, 합 100% 초과 시 경고+저장 차단, 최대 5개)
+- **실험 단위 저장**(전환 시 미저장 폐기) · **EN/KO 언어 토글**(기본 영어, 한국어 페이지면 자동 한국어) · **전체 사용자 재배정**(쿠키 초기화) · **Export/Import**
+
+> 호스트에 전역 인증 가드(예: SSO global middleware)가 있으면 `/abnxt-admin`도 그 가드를 거칩니다(앱 로그인 → abnxt 키, 2단). 가드를 우회시키려면 해당 미들웨어에서 경로 예외를 두세요.
 
 ## 6. 어드민 인증 + 라이브 저장
 
@@ -173,8 +185,9 @@ GET/PUT 모두 인증되고, PUT은 `Sec-Fetch-Site` 기반 CSRF 방어 + `no-st
 
 ## 8. config 라이브 반영
 
-- `fsConfig`로 `public/ab-config.json` 파일을 교체하면(또는 k8s ConfigMap 볼륨 마운트) mtime 기반으로 재로드됩니다.
-- 무배포 라이브가 필요하면 `remoteConfig(loader)`로 외부 소스를 쓰세요(플러그인이 아닌 서버 라우트/플러그인 config 로딩 지점에서 사용).
+- 모듈의 Nitro 미들웨어가 매 요청 서버에서 `admin.configPath`(기본 `.data/abnxt-config.json`) 파일을 읽어 `event.context`로 실어주고, 플러그인이 이를 우선 사용합니다 → **어드민 저장(또는 파일 교체)이 다음 요청부터 라이브 배정에 반영**됩니다. 파일이 없으면 인라인 `config`로 폴백합니다(2장 참고).
+- `configPath`는 노드 서버(자체호스팅·docker)에서 동작합니다. 읽기전용/서버리스 FS라면 외부 KV/오브젝트 스토리지 기반 storage로 교체하세요(아래 멀티 인스턴스 주의).
+- 멀티 인스턴스에서는 라이브 저장소가 **모든 인스턴스 공유 위치**여야 일관됩니다(로컬 파일 쓰기는 그 인스턴스에만 반영).
 
 ## 9. 검증
 

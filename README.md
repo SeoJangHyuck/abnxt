@@ -116,25 +116,27 @@ const { variant, isReady } = useExperiment('homepage-hero');
 {
   "version": 1,
   "updatedAt": "2026-06-18T09:00:00Z",
+  "resetEpoch": 1782202406565, // (선택) 전체 사용자 강제 재배정 타임스탬프. 어드민 "쿠키 초기화"가 설정.
   "experiments": {
     "homepage-hero": {
       "name": "Homepage Hero",
+      "description": "랜딩 히어로 A/B", // (선택) 사람이 읽는 설명. 어드민에 표시 + config에 저장.
       "active": true, // false면 control 고정 + 노출 미발화
       "sticky": true, // 기본 true. 한 번 배정된 변이 유지
       "seed": "homepage-hero", // 해시 salt(생략 시 key 사용)
       "control": "A", // fallback 변이(생략 시 첫 변이)
       "variants": [
         { "key": "A", "weight": 50 },
-        { "key": "B", "weight": 50 }, // N개 가능. weight는 상대값(정규화됨)
+        { "key": "B", "weight": 50 }, // 최대 5개. weight는 상대값(정규화됨)
       ],
     },
   },
 }
 ```
 
-`name`/`variants`만 필수이고 나머지는 로드 시 정규화됩니다. 잘못된 형태는 안전하게 폴백하며 렌더 경로에서 예외를 던지지 않습니다.
+`name`/`variants`만 필수이고 나머지는 로드 시 정규화됩니다(`description`은 항상 `''`로 채워짐). 잘못된 형태는 안전하게 폴백하며 렌더 경로에서 예외를 던지지 않습니다. 변이 키는 `@abnxt/core`의 `VariantKey`(A~E, 최대 `MAX_VARIANTS=5`)로도 참조할 수 있어, 소비 컴포넌트에서 `'B'` 리터럴 대신 `VariantKey.B`로 비교할 수 있습니다.
 
-> **재배정 주의:** 진행 중 실험은 **weight만** 조정하세요. 변이 추가/순서 변경·seed 변경은 sticky 쿠키가 없는 사용자의 배정을 바꿉니다. 변이 추가는 새 실험 key로 하세요.
+> **재배정 주의:** 진행 중 실험은 **weight만** 조정하세요. 변이 추가/순서 변경·seed 변경은 sticky 쿠키가 없는 사용자의 배정을 바꿉니다. 변이 추가는 새 실험 key로 하세요. 의도적으로 전원 재배정하려면 어드민의 "쿠키 초기화"(= `resetEpoch` 갱신)를 사용하세요.
 
 ## 분석 (벤더 중립)
 
@@ -147,7 +149,7 @@ window.addEventListener('abnxt:exposure', (e) => {
 });
 ```
 
-`detail`: `{ type:'exposure', experiment, name, variant, visitorId, source, ts }`. `source`(`assigned`|`stored`|`override`)로 QA(override) 트래픽을 분리할 수 있습니다.
+`detail`: `{ type:'exposure', experiment, name, variant, visitorId, source, ts }`. `source`(`assigned`|`stored`|`override`|`control`)로 QA(override) 트래픽을 분리할 수 있습니다.
 
 내장 sink은 이름으로 opt-in합니다(어댑터 `analytics.sinks`):
 
@@ -167,9 +169,9 @@ analytics={{ sinks: ['dataLayer', 'ga4'] }}
 
 ## 어드민 (프레임워크 네이티브)
 
-각 프레임워크 네이티브 어드민 페이지를 제공합니다. UI·기능은 동일하고(실험 목록·편집·시뮬레이션·Preview·Export/Import), 편집 로직은 `@abnxt/core/admin` 순수 함수를 양쪽이 공유합니다.
+각 프레임워크 네이티브 어드민 페이지를 제공합니다. UI·기능은 동일하고, 편집 로직(`@abnxt/core/admin`)·스타일(`ADMIN_CSS`)·문구(`@abnxt/core/admin`의 i18n)를 양쪽이 공유합니다. 호스트 CSS와 격리하기 위해 **Shadow DOM**(Next `createPortal` / Nuxt `<Teleport>`)으로 렌더되는 풀스크린 페이지입니다(모달 아님 — 우상단 **홈 버튼**으로 루트 이동).
 
-**Next (React)** — `app/abnxt/page.tsx`:
+**Next (React)** — `app/ab-admin/page.tsx`:
 
 ```tsx
 import { AbnxtAdmin } from '@abnxt/next/admin';
@@ -188,7 +190,15 @@ export default defineNuxtConfig({
 });
 ```
 
-화면: 실험 목록 · 편집(active 토글·변이 추가/삭제·weight 슬라이더 100% 정규화·seed·control) · 스플릿 시뮬레이션 · Preview(override 쿠키) · Save/Export/Import.
+화면 구성:
+
+- **실험 목록** — 선택 전용(비활성 실험은 흐리게 + 상태 배지). 실험을 고르면 우측 편집기가 부드럽게 전환.
+- **기본 설정** — 이름 · **설명(`description`)** · 활성화 토글 · sticky 토글 · **Seed(읽기 전용)** · control.
+- **변이 & 가중치** — 변이가 **2개면 자동 비례 조정**(합 항상 100%), **3개 이상이면 자유 입력**(합이 100%를 넘으면 경고 + 저장 차단). 변이는 최대 5개(`MAX_VARIANTS`).
+- **실험 단위 저장** — 한 번에 한 실험만 편집·저장. 다른 실험으로 전환하면 미저장 변경은 폐기됩니다.
+- **언어 토글(EN/KO)** — 기본 영어. 호스트 페이지가 한국어면(`<html lang>`/`navigator`) 자동으로 한국어.
+- **전체 사용자 재배정** — "쿠키 초기화"(위험 영역). 확인 즉시 `resetEpoch`를 올려 모든 방문자를 다음 방문에 재배정.
+- **Export / Import** — 전체 config를 JSON으로 내보내기/가져오기.
 
 ### 어드민 인증 (사전 세팅 인증키)
 
