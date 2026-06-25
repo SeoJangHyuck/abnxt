@@ -62,6 +62,11 @@ export function applyPlan(
       continue;
     }
     const r = injectWithMarkers(src, op.snippet ?? '', op.anchor ?? '');
+    if (r.corrupted) {
+      // START만 있고 END가 없는 손상 블록 → 자동 수정 대신 수동 안내(원본 보존).
+      res.manual.push({ path: op.path, manual: op.manual });
+      continue;
+    }
     if (!r.changed) {
       if (src.includes(MARKER_START)) res.skipped.push(op.path);
       else res.manual.push({ path: op.path, manual: op.manual }); // 앵커 부재 → 수동 안내

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyPlan, type ApplyIO } from './apply';
+import { MARKER_START } from './inject';
 import type { Plan } from './types';
 
 function memIO(
@@ -107,5 +108,15 @@ describe('applyPlan', () => {
     const before = { ...io.files };
     applyPlan(plan, io, {});
     expect(io.files).toEqual(before);
+  });
+
+  it('reports manual when the marker block is corrupted (START without END)', () => {
+    const io = memIO({
+      'nuxt.config.ts': `export default defineNuxtConfig({\n${MARKER_START}\nbroken\n})`,
+    });
+    const r = applyPlan(plan, io, {});
+    expect(r.manual.some((m) => m.path === 'nuxt.config.ts')).toBe(true);
+    // 손상된 블록을 자동으로 건드리지 않는다(더 망치는 것 방지).
+    expect(io.files['nuxt.config.ts']).not.toContain('SNIP');
   });
 });

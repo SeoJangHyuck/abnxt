@@ -1,9 +1,35 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  mkdirSync,
+  renameSync,
+  openSync,
+  fsyncSync,
+  closeSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { detectProject } from './detect';
 import { planScaffold } from './plan';
 import { applyPlan } from './apply';
 import type { InitOptions, PkgManager, Framework } from './types';
+
+/**
+ * 원자적 파일 쓰기: 같은 디렉토리 temp에 쓰고 fsync 후 rename으로 교체.
+ * 쓰기 중단(디스크풀/크래시) 시 잘린 파일이 원본을 덮어쓰지 않는다(부분 쓰기 방지).
+ */
+export function atomicWrite(abs: string, content: string): void {
+  mkdirSync(dirname(abs), { recursive: true });
+  const tmp = `${abs}.abnxt-${process.pid}.tmp`;
+  const fd = openSync(tmp, 'w');
+  try {
+    writeFileSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmp, abs);
+}
 
 export function run(cwd: string, opts: InitOptions): string {
   const fsRead = {
@@ -18,11 +44,7 @@ export function run(cwd: string, opts: InitOptions): string {
     {
       exists: fsRead.exists,
       read: fsRead.read,
-      write: (p, c) => {
-        const abs = join(cwd, p);
-        mkdirSync(dirname(abs), { recursive: true });
-        writeFileSync(abs, c);
-      },
+      write: (p, c) => atomicWrite(join(cwd, p), c),
     },
     opts,
   );

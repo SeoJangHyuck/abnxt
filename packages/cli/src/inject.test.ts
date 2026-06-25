@@ -23,4 +23,19 @@ describe('injectWithMarkers', () => {
     const r = injectWithMarkers('no anchor here', 'X', '// ANCHOR');
     expect(r.changed).toBe(false);
   });
+  it('re-syncs the block when the snippet changed (no duplicate block)', () => {
+    const once = injectWithMarkers('// ANCHOR\n', 'OLD', '// ANCHOR');
+    const resync = injectWithMarkers(once.content, 'NEW', '// ANCHOR');
+    expect(resync.changed).toBe(true);
+    expect(resync.content).toContain('NEW');
+    expect(resync.content).not.toContain('OLD');
+    expect(resync.content.split(MARKER_START).length - 1).toBe(1);
+  });
+  it('flags corruption when the END marker is missing (does not touch the file)', () => {
+    const src = `// ANCHOR\n${MARKER_START}\nLEFTOVER\n`;
+    const r = injectWithMarkers(src, 'SNIP', '// ANCHOR');
+    expect(r.corrupted).toBe(true);
+    expect(r.changed).toBe(false);
+    expect(r.content).toBe(src);
+  });
 });
