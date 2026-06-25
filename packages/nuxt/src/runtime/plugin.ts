@@ -32,14 +32,20 @@ export default defineNuxtPlugin(async (nuxtApp) => {
       const ctx = (event?.context?.abnxt ?? {}) as {
         vid?: string;
         overrides?: Record<string, string>;
+        config?: unknown;
       };
       const cookies = parseRequestCookies(event);
       state.value = await buildAbState({
         getVid: () => ctx.vid ?? cookies['abnxt_vid'],
         getOverrides: () => ctx.overrides ?? readOverrideCookies(cookies),
         getStickyCookie: () => cookies[STICKY_COOKIE],
+        // 서버 미들웨어(abnxt)가 configPath 파일을 읽어 ctx.config에 실어준다(어드민↔라이브 공유).
+        // 없으면 nuxt.config 인라인 config로 폴백(하위호환).
         loadConfig: async () =>
-          loadConfig((rc.abnxt as { config?: unknown } | undefined)?.config),
+          loadConfig(
+            ctx.config ??
+              (rc.abnxt as { config?: unknown } | undefined)?.config,
+          ),
         newVisitorId: createVisitorId,
       });
     } else {

@@ -13,6 +13,8 @@ export default defineConfig({
       '@abnxt/core/admin': resolve(dir, '../core/src/admin/index.ts'),
       '@abnxt/core/server': resolve(dir, '../core/src/server.ts'),
       '@abnxt/core': resolve(dir, '../core/src/index.ts'),
+      // Nuxt/Nitro 가상 모듈 — 단위 테스트에서는 스텁으로 해소.
+      '#imports': resolve(dir, 'test/stubs/imports.ts'),
     },
   },
   test: {

@@ -1,24 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h, type VNode } from 'vue';
 import type { AbConfig, Experiment, Variant } from '@abnxt/core';
+import { MAX_VARIANTS } from '@abnxt/core';
 import {
   toggleActive,
   setField,
-  addExperiment,
   upsertExperiment,
-  normalizeToPercents,
+  weightSummary,
+  weightDisplay,
   addVariant,
   removeVariant,
   redistributeWeights,
+  setWeight,
   bumpResetEpoch,
-  simulateSplit,
-  setOverride,
-  clearOverride,
   serializeConfig,
   parseConfigJson,
   apiStorage,
   variantColor,
   ADMIN_CSS,
+  adminT,
+  detectAdminLang,
+  type AdminLang,
+  type AdminDict,
 } from '@abnxt/core/admin';
 
 const props = withDefaults(
@@ -77,19 +80,6 @@ const IconX = makeIcon(() => [
   h('path', { d: 'M18 6L6 18' }),
   h('path', { d: 'M6 6l12 12' }),
 ]);
-const IconEye = makeIcon(() => [
-  h('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z' }),
-  h('circle', { cx: '12', cy: '12', r: '3' }),
-]);
-const IconEyeOff = makeIcon(() => [
-  h('path', {
-    d: 'M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68',
-  }),
-  h('path', {
-    d: 'M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61',
-  }),
-  h('path', { d: 'M2 2l20 20' }),
-]);
 const IconRefresh = makeIcon(() => [
   h('path', { d: 'M3 12a9 9 0 0 1 15-6.7L21 8' }),
   h('path', { d: 'M21 3v5h-5' }),
@@ -100,11 +90,18 @@ const IconLock = makeIcon(() => [
   h('rect', { x: '3', y: '11', width: '18', height: '11', rx: '2' }),
   h('path', { d: 'M7 11V7a5 5 0 0 1 10 0v4' }),
 ]);
+const IconHome = makeIcon(() => [
+  h('path', { d: 'M3 9.5L12 3l9 6.5' }),
+  h('path', { d: 'M5 10v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10' }),
+  h('path', { d: 'M9 21v-6h6v6' }),
+]);
 
 type Status = 'loading' | 'gate' | 'ready';
 
 const status = ref<Status>('loading');
 const config = ref<AbConfig | null>(null);
+// 서버에 저장된 마지막 스냅샷. 실험 전환 시 편집본을 여기로 되돌려 미저장 변경을 폐기.
+const savedConfig = ref<AbConfig | null>(null);
 const selectedKey = ref<string | null>(null);
 const dirty = ref(false);
 const message = ref<string | null>(null);
@@ -113,6 +110,15 @@ const gateKey = ref('');
 const gateError = ref<string | null>(null);
 const gateBusy = ref(false);
 const confirmReset = ref(false);
+
+// 호스트 페이지 언어 감지(기본 영어, 한국어면 ko). t는 lang.value를 읽어 렌더 시 반응.
+const lang = ref<AdminLang>('en');
+function t(
+  key: keyof AdminDict,
+  vars?: Record<string, string | number>,
+): string {
+  return adminT(lang.value, key, vars);
+}
 
 // ── Shadow DOM: 호스트 CSS 격리(폰트만 상속) ──────────────
 const hostRef = ref<HTMLElement | null>(null);
@@ -140,38 +146,24 @@ const selected = computed<Experiment | null>(() => {
   return c.experiments[selectedKey.value] ?? null;
 });
 
-// 렌더 경로 예외 금지: 정규화/시뮬레이션은 try/catch 폴백(React와 동일).
-const selectedPercents = computed<Record<string, number>>(() => {
-  const exp = selected.value;
-  if (!exp) return {};
-  try {
-    return normalizeToPercents(exp.variants);
-  } catch {
-    return {};
-  }
-});
-
-const simulation = computed<{ key: string; pct: number }[]>(() => {
-  const exp = selected.value;
-  if (!exp) return [];
-  try {
-    const counts = simulateSplit(exp, 1000);
-    return exp.variants.map((v) => ({
-      key: v.key,
-      pct: Math.round(((counts[v.key] ?? 0) / 1000) * 100),
-    }));
-  } catch {
-    return [];
-  }
-});
+// 가중치 정책·표시값은 core 공유 헬퍼(weightSummary/weightDisplay)로 — 어댑터 간 동일 보장.
+// 표시값: 자동(≤2)=정규화 %, 수동(3+)=raw weight. (weightDisplay가 모드 분기 + 폴백 처리)
+const selectedPercents = computed<Record<string, number>>(() =>
+  selected.value ? weightDisplay(selected.value.variants) : {},
+);
+const weightSum = computed(
+  () => weightSummary(selected.value?.variants ?? []).sum,
+);
+const autoBalance = computed(
+  () => weightSummary(selected.value?.variants ?? []).autoBalance,
+);
+const weightOver = computed(
+  () => weightSummary(selected.value?.variants ?? []).over,
+);
 
 function splitLabel(exp: Experiment): string {
-  try {
-    const pcts = normalizeToPercents(exp.variants);
-    return exp.variants.map((v) => `${v.key} ${pcts[v.key] ?? 0}%`).join(' · ');
-  } catch {
-    return '';
-  }
+  const pcts = weightDisplay(exp.variants);
+  return exp.variants.map((v) => `${v.key} ${pcts[v.key] ?? 0}%`).join(' · ');
 }
 
 // --- 데이터 로드 / 인증 (브라우저 전용: onMounted) ---
@@ -194,6 +186,7 @@ async function loadConfigFromServer(): Promise<void> {
     const raw: unknown = await res.json();
     const parsed = parseConfigJson(JSON.stringify(raw));
     config.value = parsed.config;
+    savedConfig.value = parsed.config;
     dirty.value = false;
     status.value = 'ready';
     const keys = Object.keys(parsed.config.experiments);
@@ -201,7 +194,7 @@ async function loadConfigFromServer(): Promise<void> {
       selectedKey.value = keys[0] ?? null;
     }
     if (!parsed.ok && parsed.message)
-      flash(`Loaded with warning: ${parsed.message}`, 'error');
+      flash(t('loadWarn', { msg: parsed.message }), 'error');
   } catch {
     status.value = 'gate';
     gateError.value = 'Network error while loading config';
@@ -219,7 +212,7 @@ async function submitKey(): Promise<void> {
       body: JSON.stringify({ key: gateKey.value }),
     });
     if (!res.ok) {
-      gateError.value = 'Invalid key';
+      gateError.value = t('invalidKey');
       return;
     }
     gateKey.value = '';
@@ -241,19 +234,21 @@ async function logout(): Promise<void> {
     // 무시: 쿠키는 만료 응답으로 제거되며 실패해도 키폼 복귀.
   }
   config.value = null;
+  savedConfig.value = null;
   selectedKey.value = null;
   dirty.value = false;
   message.value = null;
   status.value = 'gate';
 }
 
-function closeAdmin(): void {
+// 어드민은 모달이 아니라 페이지 — 닫기 대신 루트('/')로 이동.
+function goHome(): void {
   if (typeof window === 'undefined') return;
-  if (window.history.length > 1) window.history.back();
-  else window.location.assign('/');
+  window.location.assign('/');
 }
 
 onMounted(() => {
+  lang.value = detectAdminLang();
   // Shadow root 구성: ADMIN_CSS를 내부에 주입해 호스트 CSS와 격리.
   const host = hostRef.value;
   if (host) {
@@ -277,28 +272,25 @@ function markDirty(next: AbConfig): void {
   message.value = null;
 }
 
-function onAddExperiment(): void {
-  const c = config.value;
-  if (!c) return;
-  const before = new Set(Object.keys(c.experiments));
-  const next = addExperiment(c);
-  markDirty(next);
-  const created = Object.keys(next.experiments).find((k) => !before.has(k));
-  if (created) selectedKey.value = created;
-}
-
 function onToggleActive(key: string): void {
   const c = config.value;
   if (!c) return;
   markDirty(toggleActive(c, key));
 }
 
+// 실험 선택 전환 — 미저장 편집을 폐기(저장본 복원)하고 알럿/더티 초기화.
 function onSelect(key: string): void {
+  if (key === selectedKey.value) return;
+  config.value = savedConfig.value;
+  dirty.value = false;
+  message.value = null;
   selectedKey.value = key;
 }
 
 function onSetField(
-  fields: Partial<Pick<Experiment, 'name' | 'sticky' | 'seed' | 'control'>>,
+  fields: Partial<
+    Pick<Experiment, 'name' | 'description' | 'sticky' | 'seed' | 'control'>
+  >,
 ): void {
   const c = config.value;
   if (!c || selectedKey.value == null) return;
@@ -327,32 +319,31 @@ function onRemoveVariant(key: string): void {
 function onSetWeight(key: string, weight: number): void {
   const exp = selected.value;
   if (!exp) return;
-  // 동적 가중치: 나머지 변이가 비례 자동 조정되어 합 100 유지.
-  updateSelectedVariants(redistributeWeights(exp.variants, key, weight));
-}
-
-// --- Preview (override 쿠키, 내 브라우저 한정) ---
-
-function onPreview(variant: string): void {
-  if (selectedKey.value == null) return;
-  setOverride(selectedKey.value, variant);
-  flash(`Preview: ${selectedKey.value} → ${variant}`, 'info');
-}
-
-function onClearPreview(): void {
-  if (selectedKey.value == null) return;
-  clearOverride(selectedKey.value);
-  flash(`Preview cleared: ${selectedKey.value}`, 'info');
+  // 2개 이하: 나머지가 비례 자동 조정(합 100 유지). 3개 이상: 해당 변이만 자유 설정.
+  updateSelectedVariants(
+    autoBalance.value
+      ? redistributeWeights(exp.variants, key, weight)
+      : setWeight(exp.variants, key, weight),
+  );
 }
 
 // --- 전체 사용자 강제 재배정(쿠키 초기화) ---
 
-function onConfirmReset(): void {
-  const c = config.value;
-  if (!c) return;
-  markDirty(bumpResetEpoch(c));
+// 전역 동작이라 확인 즉시 저장(실험별 저장과 독립).
+async function onConfirmReset(): Promise<void> {
+  const base = savedConfig.value;
   confirmReset.value = false;
-  flash('All-user reset queued — press Save to apply', 'success');
+  if (!base) return;
+  const next = bumpResetEpoch(base);
+  try {
+    await storage.value.save(next);
+    config.value = next;
+    savedConfig.value = next;
+    dirty.value = false;
+    flash(t('resetDone'), 'success');
+  } catch (e) {
+    flash(`${t('saveFailed')}: ${(e as Error).message}`, 'error');
+  }
 }
 
 // --- 저장 / Export / Import ---
@@ -362,10 +353,11 @@ async function onSave(): Promise<void> {
   if (!c) return;
   try {
     await storage.value.save(c);
+    savedConfig.value = c;
     dirty.value = false;
-    flash('Saved', 'success');
+    flash(t('saved'), 'success');
   } catch (e) {
-    flash(`Save failed: ${(e as Error).message}`, 'error');
+    flash(`${t('saveFailed')}: ${(e as Error).message}`, 'error');
   }
 }
 
@@ -391,13 +383,15 @@ function onImportFile(e: Event): void {
     const text = String(reader.result ?? '');
     const result = parseConfigJson(text);
     if (!result.ok) {
-      flash(`Import failed: ${result.message ?? 'invalid config'}`, 'error');
+      flash(`${t('importFailed')}: ${result.message ?? ''}`, 'error');
       return;
     }
     config.value = result.config;
+    // import는 전체 교체(미저장) — savedConfig도 갱신해 실험 전환 시 폐기되지 않게.
+    savedConfig.value = result.config;
     dirty.value = true;
     selectedKey.value = Object.keys(result.config.experiments)[0] ?? null;
-    flash('Imported (unsaved)', 'success');
+    flash(t('imported'), 'success');
   };
   reader.readAsText(file);
   input.value = '';
@@ -432,6 +426,28 @@ function onImportFile(e: Event): void {
           class="abnxt-modal__overlay"
         >
           <div class="abnxt-modal__card">
+            <div class="abnxt-admin__gate-lang">
+              <div
+                class="abnxt-admin__lang"
+                role="group"
+                :aria-label="t('langToggle')"
+              >
+                <button
+                  type="button"
+                  :data-on="lang === 'en'"
+                  @click="lang = 'en'"
+                >
+                  EN
+                </button>
+                <button
+                  type="button"
+                  :data-on="lang === 'ko'"
+                  @click="lang = 'ko'"
+                >
+                  KO
+                </button>
+              </div>
+            </div>
             <div class="abnxt-admin__gate">
               <form
                 class="abnxt-admin__gate-card"
@@ -441,16 +457,13 @@ function onImportFile(e: Event): void {
                   <IconLock :size="22" />
                 </div>
                 <div class="abnxt-admin__gate-title">{{ title }}</div>
-                <p class="abnxt-admin__gate-text">
-                  관리자 키를 입력해 어드민에 접근하세요. 키는 서버에서만
-                  검증되며 HMAC 세션 쿠키로 교환됩니다.
-                </p>
+                <p class="abnxt-admin__gate-text">{{ t('gateText') }}</p>
                 <input
                   v-model="gateKey"
                   class="abnxt-admin__gate-input"
                   type="password"
-                  placeholder="Admin key"
-                  aria-label="Admin key"
+                  :placeholder="t('adminKey')"
+                  :aria-label="t('adminKey')"
                   autocomplete="current-password"
                 />
                 <button
@@ -459,7 +472,7 @@ function onImportFile(e: Event): void {
                   :disabled="gateBusy"
                 >
                   <IconLock />
-                  Unlock
+                  {{ t('unlock') }}
                 </button>
                 <div
                   v-if="gateError"
@@ -484,11 +497,9 @@ function onImportFile(e: Event): void {
                 <span class="abnxt-modal__logo">
                   <span style="font-weight: 800; font-size: 13px">AB</span>
                 </span>
-                <div>
+                <div style="min-width: 0">
                   <div class="abnxt-modal__title">{{ title }}</div>
-                  <div class="abnxt-modal__sub">
-                    A/B 테스트 구성 · 저장 전까지 미반영
-                  </div>
+                  <div class="abnxt-modal__sub">{{ t('headerSub') }}</div>
                 </div>
               </div>
               <span
@@ -496,24 +507,44 @@ function onImportFile(e: Event): void {
                 class="abnxt-modal__badge"
               >
                 <span class="abnxt-modal__badge-dot" />
-                미저장 변경
+                {{ t('unsaved') }}
               </span>
               <div class="abnxt-modal__actions">
+                <div
+                  class="abnxt-admin__lang"
+                  role="group"
+                  :aria-label="t('langToggle')"
+                >
+                  <button
+                    type="button"
+                    :data-on="lang === 'en'"
+                    @click="lang = 'en'"
+                  >
+                    EN
+                  </button>
+                  <button
+                    type="button"
+                    :data-on="lang === 'ko'"
+                    @click="lang = 'ko'"
+                  >
+                    KO
+                  </button>
+                </div>
                 <button
                   class="abnxt-admin__btn abnxt-admin__btn--sm"
                   type="button"
-                  title="현재 구성을 JSON 파일로 내보내기"
+                  :title="t('tipExport')"
                   @click="onExport"
                 >
                   <IconDownload />
-                  Export
+                  {{ t('export') }}
                 </button>
                 <label
                   class="abnxt-admin__btn abnxt-admin__btn--sm"
-                  title="JSON 파일에서 구성 가져오기(저장 전까지 미반영)"
+                  :title="t('tipImport')"
                 >
                   <IconUpload />
-                  Import
+                  {{ t('import') }}
                   <input
                     type="file"
                     accept="application/json"
@@ -522,32 +553,22 @@ function onImportFile(e: Event): void {
                   />
                 </label>
                 <button
-                  class="abnxt-admin__btn abnxt-admin__btn--primary abnxt-admin__btn--sm"
-                  type="button"
-                  :disabled="!dirty"
-                  title="변경사항을 서버에 저장"
-                  @click="onSave"
-                >
-                  <IconCheck />
-                  Save
-                </button>
-                <button
                   class="abnxt-admin__btn abnxt-admin__btn--ghost abnxt-admin__btn--sm"
                   type="button"
-                  title="세션 종료"
+                  :title="t('tipLogout')"
                   @click="logout"
                 >
                   <IconPower />
-                  Logout
+                  {{ t('logout') }}
                 </button>
                 <button
                   class="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--ghost"
                   type="button"
-                  aria-label="Close"
-                  title="닫기"
-                  @click="closeAdmin"
+                  :aria-label="t('home')"
+                  :title="t('tipHome')"
+                  @click="goHome"
                 >
-                  <IconX />
+                  <IconHome />
                 </button>
               </div>
             </header>
@@ -567,23 +588,16 @@ function onImportFile(e: Event): void {
               <!-- 좌측 리스트 -->
               <aside class="abnxt-admin__sidebar">
                 <div class="abnxt-admin__sidebar-head">
-                  <span class="abnxt-admin__sidebar-title">실험 목록</span>
-                  <button
-                    class="abnxt-admin__btn abnxt-admin__btn--sm"
-                    type="button"
-                    title="새 실험 추가"
-                    @click="onAddExperiment"
-                  >
-                    <IconPlus />
-                    추가
-                  </button>
+                  <span class="abnxt-admin__sidebar-title">{{
+                    t('listTitle')
+                  }}</span>
                 </div>
                 <div class="abnxt-admin__list">
                   <div
                     v-if="experimentEntries.length === 0"
                     class="abnxt-admin__empty"
                   >
-                    아직 실험이 없습니다.
+                    {{ t('listEmpty') }}
                   </div>
                   <button
                     v-for="[key, exp] in experimentEntries"
@@ -592,6 +606,7 @@ function onImportFile(e: Event): void {
                     class="abnxt-admin__list-item"
                     :class="{
                       'abnxt-admin__list-item--selected': key === selectedKey,
+                      'abnxt-admin__list-item--inactive': !exp.active,
                     }"
                     @click="onSelect(key)"
                   >
@@ -599,9 +614,10 @@ function onImportFile(e: Event): void {
                       <span class="abnxt-admin__list-name">{{
                         exp.name || key
                       }}</span>
-                      <span class="abnxt-admin__list-meta">
-                        <span class="abnxt-admin__list-key">{{ key }}</span>
-                      </span>
+                      <span
+                        class="abnxt-admin__list-meta abnxt-admin__list-key"
+                        >{{ key }}</span
+                      >
                       <span class="abnxt-admin__list-meta">{{
                         splitLabel(exp)
                       }}</span>
@@ -613,20 +629,28 @@ function onImportFile(e: Event): void {
                           ? 'abnxt-admin__pill--on'
                           : 'abnxt-admin__pill--off'
                       "
-                      >{{ exp.active ? 'on' : 'off' }}</span
+                      >{{ exp.active ? t('active') : t('inactive') }}</span
                     >
-                    <span
-                      class="abnxt-admin__switch"
-                      role="switch"
-                      :aria-checked="exp.active"
-                      :aria-label="`${exp.name || key} 활성화 토글`"
-                      tabindex="0"
-                      :data-on="exp.active"
-                      @click.stop="onToggleActive(key)"
-                      @keydown.enter.prevent.stop="onToggleActive(key)"
-                      @keydown.space.prevent.stop="onToggleActive(key)"
-                    />
                   </button>
+                </div>
+                <!-- 전역 위험 영역(전체 실험/전체 사용자 재배정) — 실험별 아님 -->
+                <div class="abnxt-admin__sidebar-foot">
+                  <div class="abnxt-admin__danger-zone">
+                    <div class="abnxt-admin__danger-title">
+                      {{ t('secDanger') }}
+                    </div>
+                    <div class="abnxt-admin__danger-text">
+                      {{ t('dangerText') }}
+                    </div>
+                    <button
+                      class="abnxt-admin__btn abnxt-admin__btn--danger"
+                      type="button"
+                      @click="confirmReset = true"
+                    >
+                      <IconRefresh />
+                      {{ t('dangerBtn') }}
+                    </button>
+                  </div>
                 </div>
               </aside>
 
@@ -635,37 +659,49 @@ function onImportFile(e: Event): void {
                 v-if="!selected"
                 class="abnxt-admin__empty"
               >
-                선택된 실험이 없습니다. 왼쪽에서 실험을 추가해 시작하세요.
+                {{ t('noSelection') }}
               </div>
               <div
                 v-else
+                :key="selectedKey ?? ''"
                 class="abnxt-admin__editor"
               >
                 <div class="abnxt-admin__editor-head">
-                  <div style="margin-right: auto">
+                  <div style="margin-right: auto; min-width: 0">
                     <div class="abnxt-admin__editor-title">
                       {{ selected.name || selectedKey }}
                     </div>
                     <div class="abnxt-admin__editor-key">{{ selectedKey }}</div>
+                    <p
+                      v-if="selected.description"
+                      class="abnxt-admin__editor-desc"
+                    >
+                      {{ selected.description }}
+                    </p>
                   </div>
-                  <span
-                    class="abnxt-admin__pill"
-                    :class="
-                      selected.active
-                        ? 'abnxt-admin__pill--on'
-                        : 'abnxt-admin__pill--off'
-                    "
-                    >{{ selected.active ? '활성' : '비활성' }}</span
-                  >
+                  <div class="abnxt-admin__editor-actions">
+                    <button
+                      class="abnxt-admin__btn abnxt-admin__btn--primary"
+                      type="button"
+                      :disabled="!dirty || weightOver"
+                      :title="t('tipSave')"
+                      @click="onSave"
+                    >
+                      <IconCheck />
+                      {{ t('save') }}
+                    </button>
+                  </div>
                 </div>
 
                 <!-- 기본 설정 -->
                 <section class="abnxt-admin__section">
-                  <div class="abnxt-admin__section-title">기본 설정</div>
+                  <div class="abnxt-admin__section-title">
+                    {{ t('secBasic') }}
+                  </div>
 
                   <div class="abnxt-admin__field">
                     <div class="abnxt-admin__field-head">
-                      <label class="abnxt-admin__label">이름</label>
+                      <label class="abnxt-admin__label">{{ t('fName') }}</label>
                     </div>
                     <input
                       class="abnxt-admin__input"
@@ -677,20 +713,40 @@ function onImportFile(e: Event): void {
                         })
                       "
                     />
-                    <p class="abnxt-admin__hint">
-                      대시보드/분석에 표시되는 사람이 읽는 이름입니다.
-                    </p>
+                    <p class="abnxt-admin__hint">{{ t('hName') }}</p>
+                  </div>
+
+                  <div class="abnxt-admin__field">
+                    <div class="abnxt-admin__field-head">
+                      <label class="abnxt-admin__label">{{
+                        t('fDescription')
+                      }}</label>
+                    </div>
+                    <textarea
+                      class="abnxt-admin__textarea"
+                      :value="selected.description ?? ''"
+                      @input="
+                        onSetField({
+                          description: ($event.target as HTMLTextAreaElement)
+                            .value,
+                        })
+                      "
+                    />
+                    <p class="abnxt-admin__hint">{{ t('hDescription') }}</p>
                   </div>
 
                   <div class="abnxt-admin__field abnxt-admin__field--inline">
-                    <div class="abnxt-admin__field-head">
-                      <label class="abnxt-admin__label">활성화</label>
+                    <div class="abnxt-admin__field-text">
+                      <label class="abnxt-admin__label">{{
+                        t('fActive')
+                      }}</label>
+                      <p class="abnxt-admin__hint">{{ t('hActive') }}</p>
                     </div>
                     <span
                       class="abnxt-admin__switch"
                       role="switch"
                       :aria-checked="selected.active"
-                      aria-label="활성화"
+                      :aria-label="t('fActive')"
                       tabindex="0"
                       :data-on="selected.active"
                       @click="selectedKey && onToggleActive(selectedKey)"
@@ -702,23 +758,19 @@ function onImportFile(e: Event): void {
                       "
                     />
                   </div>
-                  <p
-                    class="abnxt-admin__hint"
-                    style="margin-top: -8px"
-                  >
-                    끄면 모든 방문자에게 control 변이가 강제되고 노출 이벤트가
-                    발생하지 않습니다. (키 삭제 대신 비활성화로 운영)
-                  </p>
 
                   <div class="abnxt-admin__field abnxt-admin__field--inline">
-                    <div class="abnxt-admin__field-head">
-                      <label class="abnxt-admin__label">Sticky</label>
+                    <div class="abnxt-admin__field-text">
+                      <label class="abnxt-admin__label">{{
+                        t('fSticky')
+                      }}</label>
+                      <p class="abnxt-admin__hint">{{ t('hSticky') }}</p>
                     </div>
                     <span
                       class="abnxt-admin__switch"
                       role="switch"
                       :aria-checked="selected.sticky"
-                      aria-label="sticky"
+                      :aria-label="t('fSticky')"
                       tabindex="0"
                       :data-on="selected.sticky"
                       @click="onSetField({ sticky: !selected.sticky })"
@@ -730,37 +782,26 @@ function onImportFile(e: Event): void {
                       "
                     />
                   </div>
-                  <p
-                    class="abnxt-admin__hint"
-                    style="margin-top: -8px"
-                  >
-                    켜면 한 번 배정된 변이가 쿠키에 저장되어 재방문 시
-                    유지됩니다.
-                  </p>
 
                   <div class="abnxt-admin__field">
                     <div class="abnxt-admin__field-head">
-                      <label class="abnxt-admin__label">Seed</label>
+                      <label class="abnxt-admin__label">{{ t('fSeed') }}</label>
                     </div>
                     <input
                       class="abnxt-admin__input"
                       type="text"
                       :value="selected.seed"
-                      @input="
-                        onSetField({
-                          seed: ($event.target as HTMLInputElement).value,
-                        })
-                      "
+                      readonly
+                      aria-readonly="true"
                     />
-                    <p class="abnxt-admin__hint">
-                      결정적 해시 시드. 같은 방문자라도 시드가 다르면 다른
-                      실험에 독립적으로 배정됩니다.
-                    </p>
+                    <p class="abnxt-admin__hint">{{ t('hSeed') }}</p>
                   </div>
 
                   <div class="abnxt-admin__field">
                     <div class="abnxt-admin__field-head">
-                      <label class="abnxt-admin__label">Control</label>
+                      <label class="abnxt-admin__label">{{
+                        t('fControl')
+                      }}</label>
                     </div>
                     <select
                       class="abnxt-admin__select"
@@ -779,21 +820,17 @@ function onImportFile(e: Event): void {
                         {{ v.key }}
                       </option>
                     </select>
-                    <p class="abnxt-admin__hint">
-                      기준(대조) 변이. 비활성/폴백 시 이 변이가 사용됩니다.
-                    </p>
+                    <p class="abnxt-admin__hint">{{ t('hControl') }}</p>
                   </div>
                 </section>
 
-                <!-- 변이 + 동적 가중치 -->
+                <!-- 변이 + 가중치 -->
                 <section class="abnxt-admin__section">
-                  <div class="abnxt-admin__section-title">변이 & 가중치</div>
-                  <p
-                    class="abnxt-admin__hint"
-                    style="margin-bottom: 12px"
-                  >
-                    슬라이더로 비중(%)을 조정하면 나머지 변이가 자동으로 비례
-                    조정되어 합이 항상 100%로 유지됩니다.
+                  <div class="abnxt-admin__section-title">
+                    {{ t('secVariants') }}
+                  </div>
+                  <p class="abnxt-admin__section-intro">
+                    {{ autoBalance ? t('hVariants') : t('hVariantsManual') }}
                   </p>
                   <div
                     v-for="(v, i) in selected.variants"
@@ -806,59 +843,41 @@ function onImportFile(e: Event): void {
                       >{{ v.key }}</span
                     >
                     <div class="abnxt-admin__variant-track">
-                      <div class="abnxt-admin__variant-top">
-                        <div class="abnxt-admin__bar">
-                          <span
-                            class="abnxt-admin__bar-fill"
-                            :style="{
-                              width: (selectedPercents[v.key] ?? 0) + '%',
-                              background: variantColor(i),
-                            }"
-                          />
-                        </div>
-                        <span class="abnxt-admin__variant-pct"
-                          >{{ selectedPercents[v.key] ?? 0 }}%</span
-                        >
+                      <div class="abnxt-admin__bar">
+                        <span
+                          class="abnxt-admin__bar-fill"
+                          :style="{
+                            width:
+                              Math.min(100, selectedPercents[v.key] ?? 0) + '%',
+                            background: variantColor(i),
+                          }"
+                        />
+                        <input
+                          class="abnxt-admin__range"
+                          type="range"
+                          min="0"
+                          max="100"
+                          :value="selectedPercents[v.key] ?? 0"
+                          :aria-label="`weight ${v.key}`"
+                          :style="{ color: variantColor(i) }"
+                          @input="
+                            onSetWeight(
+                              v.key,
+                              Number(($event.target as HTMLInputElement).value),
+                            )
+                          "
+                        />
                       </div>
-                      <input
-                        class="abnxt-admin__range"
-                        type="range"
-                        min="0"
-                        max="100"
-                        :value="selectedPercents[v.key] ?? 0"
-                        :aria-label="`weight ${v.key}`"
-                        @input="
-                          onSetWeight(
-                            v.key,
-                            Number(($event.target as HTMLInputElement).value),
-                          )
-                        "
-                      />
+                      <span class="abnxt-admin__pct"
+                        >{{ selectedPercents[v.key] ?? 0 }}%</span
+                      >
                     </div>
                     <div class="abnxt-admin__variant-actions">
-                      <button
-                        class="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--ghost"
-                        type="button"
-                        :aria-label="`preview ${v.key}`"
-                        title="이 변이로 미리보기(내 브라우저 override 쿠키)"
-                        @click="onPreview(v.key)"
-                      >
-                        <IconEye />
-                      </button>
-                      <button
-                        class="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--ghost"
-                        type="button"
-                        :aria-label="`clear preview ${v.key}`"
-                        title="미리보기 해제"
-                        @click="onClearPreview"
-                      >
-                        <IconEyeOff />
-                      </button>
                       <button
                         class="abnxt-admin__btn abnxt-admin__btn--icon abnxt-admin__btn--danger"
                         type="button"
                         :aria-label="`remove ${v.key}`"
-                        title="변이 제거"
+                        :title="t('tipRemoveVariant')"
                         :disabled="selected.variants.length <= 1"
                         @click="onRemoveVariant(v.key)"
                       >
@@ -866,75 +885,32 @@ function onImportFile(e: Event): void {
                       </button>
                     </div>
                   </div>
+                  <div
+                    v-if="!autoBalance"
+                    class="abnxt-admin__weight-total"
+                    :class="{
+                      'abnxt-admin__weight-total--error': weightOver,
+                    }"
+                  >
+                    <span>{{ t('weightTotal', { sum: weightSum }) }}</span>
+                    <span v-if="weightOver">{{ t('weightOver') }}</span>
+                  </div>
                   <button
+                    v-if="selected.variants.length < MAX_VARIANTS"
                     class="abnxt-admin__btn"
                     type="button"
                     style="margin-top: 4px"
                     @click="onAddVariant"
                   >
                     <IconPlus />
-                    변이 추가
+                    {{ t('addVariant') }}
                   </button>
-                </section>
-
-                <!-- 시뮬레이션 -->
-                <section class="abnxt-admin__section">
-                  <div class="abnxt-admin__section-title">
-                    배정 시뮬레이션 (1,000명)
-                  </div>
-                  <div class="abnxt-admin__sim">
-                    <div
-                      v-for="(row, i) in simulation"
-                      :key="row.key"
-                      class="abnxt-admin__sim-row"
-                    >
-                      <span
-                        class="abnxt-admin__variant-key"
-                        :style="{
-                          background: variantColor(i),
-                          width: '24px',
-                          height: '24px',
-                        }"
-                        >{{ row.key }}</span
-                      >
-                      <div class="abnxt-admin__sim-track">
-                        <span
-                          class="abnxt-admin__sim-bar"
-                          :style="{
-                            width: row.pct + '%',
-                            background: variantColor(i),
-                          }"
-                        />
-                      </div>
-                      <span
-                        class="abnxt-admin__sim-val abnxt-admin__variant-pct"
-                        >{{ row.pct }}%</span
-                      >
-                    </div>
-                  </div>
                   <p
+                    v-else
                     class="abnxt-admin__hint"
-                    style="margin-top: 8px"
                   >
-                    가상 방문자 1,000명을 결정적 해시로 배정한 예상 분포입니다.
+                    {{ t('maxVariants', { n: MAX_VARIANTS }) }}
                   </p>
-                </section>
-
-                <!-- 위험 영역 -->
-                <section class="abnxt-admin__danger-zone">
-                  <div class="abnxt-admin__danger-title">위험 영역</div>
-                  <div class="abnxt-admin__danger-text">
-                    모든 사용자의 배정 쿠키를 초기화하여 전체 재배정을
-                    강제합니다. 저장 후 적용됩니다.
-                  </div>
-                  <button
-                    class="abnxt-admin__btn abnxt-admin__btn--danger"
-                    type="button"
-                    @click="confirmReset = true"
-                  >
-                    <IconRefresh />
-                    모든 사용자 쿠키 초기화
-                  </button>
                 </section>
               </div>
             </div>
@@ -948,12 +924,10 @@ function onImportFile(e: Event): void {
             >
               <div class="abnxt-admin__confirm-card">
                 <div class="abnxt-admin__confirm-title">
-                  모든 사용자 쿠키를 초기화할까요?
+                  {{ t('confirmTitle') }}
                 </div>
                 <div class="abnxt-admin__confirm-text">
-                  모든 방문자의 기존 배정(sticky)이 무효화되어 다음 방문 시
-                  재배정됩니다. 이 작업은 <strong>저장(Save)</strong> 후에
-                  적용됩니다.
+                  {{ t('confirmText') }}
                 </div>
                 <div class="abnxt-admin__confirm-actions">
                   <button
@@ -961,7 +935,7 @@ function onImportFile(e: Event): void {
                     type="button"
                     @click="confirmReset = false"
                   >
-                    취소
+                    {{ t('cancel') }}
                   </button>
                   <button
                     class="abnxt-admin__btn abnxt-admin__btn--danger"
@@ -969,7 +943,7 @@ function onImportFile(e: Event): void {
                     @click="onConfirmReset"
                   >
                     <IconRefresh />
-                    초기화 예약
+                    {{ t('confirmReset') }}
                   </button>
                 </div>
               </div>

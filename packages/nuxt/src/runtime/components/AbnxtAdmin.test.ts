@@ -101,22 +101,23 @@ describe('<AbnxtAdmin>', () => {
     expect(nameInput.value).toBe('Hero');
   });
 
-  it('toggles active via the list switch and marks dirty', async () => {
+  it('toggles active via the editor switch and enables per-experiment Save', async () => {
     const w = mount(AbnxtAdmin);
     await flushPromises();
     await authenticate(w);
-    const pill = q(w, '.abnxt-admin__list-item .abnxt-admin__pill')!;
-    expect(pill.textContent).toBe('on');
+    // 저장 전 에디터 Save 비활성
+    const saveBefore = qa(w, '.abnxt-admin__btn').find(
+      (b) => b.textContent?.trim() === 'Save',
+    ) as HTMLButtonElement;
+    expect(saveBefore.disabled).toBe(true);
+    // 에디터의 첫 스위치 = '활성화'(Active)
     const toggle = q<HTMLElement>(
       w,
-      '.abnxt-admin__list-item .abnxt-admin__switch',
+      '.abnxt-admin__editor .abnxt-admin__switch',
     )!;
+    expect(toggle.getAttribute('data-on')).toBe('true');
     toggle.dispatchEvent(new Event('click', { bubbles: true }));
     await flushPromises();
-    expect(
-      q(w, '.abnxt-admin__list-item .abnxt-admin__pill')!.textContent,
-    ).toBe('off');
-    // dirty → Save 활성
     const save = qa(w, '.abnxt-admin__btn').find(
       (b) => b.textContent?.trim() === 'Save',
     ) as HTMLButtonElement;
@@ -135,31 +136,29 @@ describe('<AbnxtAdmin>', () => {
     ranges[0].value = '0';
     ranges[0].dispatchEvent(new Event('input', { bubbles: true }));
     await flushPromises();
-    const pcts = qa(w, '.abnxt-admin__variant .abnxt-admin__variant-pct').map(
+    const pcts = qa(w, '.abnxt-admin__variant .abnxt-admin__pct').map(
       (n) => n.textContent,
     );
     expect(pcts[0]).toBe('0%');
     expect(pcts[1]).toBe('100%');
   });
 
-  it('queues an all-user reset after confirmation', async () => {
+  it('applies an all-user reset immediately on confirmation', async () => {
     const w = mount(AbnxtAdmin);
     await flushPromises();
     await authenticate(w);
     const resetBtn = qa(w, '.abnxt-admin__btn').find((b) =>
-      b.textContent?.includes('모든 사용자 쿠키 초기화'),
+      b.textContent?.includes('Reset all-user cookies'),
     ) as HTMLButtonElement;
     resetBtn.dispatchEvent(new Event('click', { bubbles: true }));
     await flushPromises();
-    expect(shadow(w).textContent).toContain('모든 사용자 쿠키를 초기화할까요?');
+    expect(shadow(w).textContent).toContain('Reset all user cookies?');
     const confirm = qa(w, '.abnxt-admin__confirm .abnxt-admin__btn').find((b) =>
-      b.textContent?.includes('초기화 예약'),
+      b.textContent?.includes('Reset now'),
     ) as HTMLButtonElement;
     confirm.dispatchEvent(new Event('click', { bubbles: true }));
     await flushPromises();
-    const save = qa(w, '.abnxt-admin__btn').find(
-      (b) => b.textContent?.trim() === 'Save',
-    ) as HTMLButtonElement;
-    expect(save.disabled).toBe(false);
+    // 전역 동작 → 즉시 저장 후 성공 메시지
+    expect(shadow(w).textContent).toContain('All-user reset applied');
   });
 });
