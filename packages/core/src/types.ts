@@ -3,6 +3,11 @@ export type Variant = { key: string; weight: number };
 /** loadConfig로 정규화된 실험. seed/sticky/control은 항상 채워져 있다. */
 export interface Experiment {
   name: string;
+  /**
+   * 이 키의 동작을 설명하는 사람이 읽는 설명(어드민/문서용).
+   * loadConfig 정규화 시 항상 ''로 채워지므로 런타임에서는 항상 존재한다(타입은 하위호환을 위해 optional).
+   */
+  description?: string;
   active: boolean;
   sticky: boolean;
   seed: string;

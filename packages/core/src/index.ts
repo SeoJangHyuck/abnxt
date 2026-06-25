@@ -14,6 +14,12 @@ export type {
   AbState,
 } from './types';
 
+export {
+  VARIANT_KEYS,
+  VariantKey,
+  MAX_VARIANTS,
+  type VariantKeyName,
+} from './variant-keys';
 export { hashToUnit } from './hash';
 export {
   loadConfig,

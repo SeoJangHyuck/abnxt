@@ -112,6 +112,7 @@ function normalizeExperiment(
       : variants[0].key;
   return {
     name: typeof v.name === 'string' ? v.name : key,
+    description: typeof v.description === 'string' ? v.description : '',
     active: v.active !== false,
     sticky: v.sticky !== false,
     seed,

@@ -16,6 +16,9 @@ export {
   removeVariant,
   setWeight,
   redistributeWeights,
+  weightSummary,
+  weightDisplay,
+  type WeightSummary,
 } from './weights';
 export {
   ADMIN_CSS,
@@ -24,6 +27,14 @@ export {
   variantColor,
 } from './styles';
 export { simulateSplit } from './simulate';
+export {
+  ADMIN_LANGS,
+  ADMIN_STRINGS,
+  detectAdminLang,
+  adminT,
+  type AdminLang,
+  type AdminDict,
+} from './i18n';
 export { setOverride, clearOverride, type PreviewCookieIO } from './preview';
 export {
   createLocalDraftStorage,

@@ -1,4 +1,5 @@
 import type { Variant } from '../types';
+import { VARIANT_KEYS, MAX_VARIANTS } from '../variant-keys';
 
 /**
  * 상대 weight를 100% 합 백분율로(최대잉여법). 합 0이면 균등 분배.
@@ -34,17 +35,55 @@ export function normalizeToPercents(
 
 function nextKey(variants: Variant[]): string {
   const keys = new Set(variants.map((v) => v.key));
-  for (let i = 0; i < 26; i++) {
-    const k = String.fromCharCode(65 + i);
+  for (const k of VARIANT_KEYS) {
     if (!keys.has(k)) return k;
   }
+  // 폴백(이론상 도달하지 않음 — addVariant가 MAX_VARIANTS에서 막는다).
   let n = variants.length;
   while (keys.has(`V${n}`)) n++;
   return `V${n}`;
 }
 
+/** 변이 추가. 최대 MAX_VARIANTS(5)개까지만 — 초과 시 변경 없이 그대로 반환. */
 export function addVariant(variants: Variant[]): Variant[] {
+  if (variants.length >= MAX_VARIANTS) return variants;
   return [...variants, { key: nextKey(variants), weight: 50 }];
+}
+
+/**
+ * 어드민 가중치 정책 요약(프레임워크 무관, Next/Nuxt 어드민 공유).
+ * - 변이 2개 이하: 자동 비례 조정(합 항상 100%).
+ * - 3개 이상: 자유 입력. 합(정수 반올림)이 100% 초과면 `over`(저장 차단 신호).
+ */
+export interface WeightSummary {
+  autoBalance: boolean;
+  sum: number;
+  over: boolean;
+}
+export function weightSummary(variants: Variant[]): WeightSummary {
+  const autoBalance = variants.length <= 2;
+  const sum = variants.reduce(
+    (s, v) => s + Math.max(0, Math.round(v.weight)),
+    0,
+  );
+  return { autoBalance, sum, over: !autoBalance && sum > 100 };
+}
+
+/**
+ * 변이별 표시값(%): 2개 이하는 정규화 %, 3개 이상은 raw weight(정수). 슬라이더 값·라벨·막대에 공유.
+ * 정규화 실패는 빈 맵 폴백(렌더 경로 예외 금지).
+ */
+export function weightDisplay(variants: Variant[]): Record<string, number> {
+  if (variants.length <= 2) {
+    try {
+      return normalizeToPercents(variants);
+    } catch {
+      return {};
+    }
+  }
+  const out: Record<string, number> = {};
+  for (const v of variants) out[v.key] = Math.max(0, Math.round(v.weight));
+  return out;
 }
 
 export function removeVariant(variants: Variant[], key: string): Variant[] {

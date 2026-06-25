@@ -23,7 +23,9 @@ export function toggleActive(cfg: AbConfig, key: string): AbConfig {
 export function setField(
   cfg: AbConfig,
   key: string,
-  fields: Partial<Pick<Experiment, 'name' | 'sticky' | 'seed' | 'control'>>,
+  fields: Partial<
+    Pick<Experiment, 'name' | 'description' | 'sticky' | 'seed' | 'control'>
+  >,
 ): AbConfig {
   const exp = cfg.experiments[key];
   if (!exp) return cfg;
@@ -37,6 +39,7 @@ export function addExperiment(cfg: AbConfig): AbConfig {
   while (keys.has(key)) key = `experiment-${++n}`;
   const exp: Experiment = {
     name: key,
+    description: '',
     active: false,
     sticky: true,
     seed: key,
