@@ -1,4 +1,8 @@
-import { verifyAdminKey, signSession } from '@abnxt/core/server';
+import {
+  verifyAdminKey,
+  signSession,
+  DEFAULT_ADMIN_COOKIE,
+} from '@abnxt/core/server';
 
 /** 어드민 키→세션 교환 라우트 옵션. */
 export interface AuthRouteOptions {
@@ -13,8 +17,6 @@ export interface AuthRouteOptions {
   /** 결정적 테스트용 시계 주입. */
   now?: () => number;
 }
-
-const DEFAULT_COOKIE = 'abnxt_admin';
 
 const NO_STORE = {
   'cache-control': 'no-store',
@@ -71,7 +73,7 @@ export function createAbnxtAuthRoute(opts: AuthRouteOptions = {}): {
 } {
   const expected = opts.key ?? process.env.ABNXT_ADMIN_KEY;
   const secret = opts.secret ?? expected;
-  const cookieName = opts.cookieName ?? DEFAULT_COOKIE;
+  const cookieName = opts.cookieName ?? DEFAULT_ADMIN_COOKIE;
   const isProd = process.env.NODE_ENV === 'production';
 
   const buildCookie = (value: string, maxAgeSec: number): string => {

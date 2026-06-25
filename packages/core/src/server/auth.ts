@@ -2,6 +2,9 @@ import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 
 const DEFAULT_MAX_AGE_MS = 86_400_000; // 24h — 무기한 토큰 방지
 
+/** 어드민 세션 쿠키 기본 이름. 발급(auth-route)과 검증(config-route)이 공유하는 단일 출처(SoT). */
+export const DEFAULT_ADMIN_COOKIE = 'abnxt_admin';
+
 /** 상수시간 문자열 비교(길이 차만 노출). */
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -104,7 +107,8 @@ export function verifySession(
     return { valid: false };
   }
   const now = (opts.now ?? (() => Date.now()))();
-  if (typeof payload.exp === 'number' && now > payload.exp)
+  // 모든 세션은 만료 가능해야 한다: exp가 숫자가 아니면(누락/변조) 거부(fail-closed).
+  if (typeof payload.exp !== 'number' || now > payload.exp)
     return { valid: false };
   const { iat: _iat, exp: _exp, ...rest } = payload;
   void _iat;

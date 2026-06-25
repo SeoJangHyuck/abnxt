@@ -1,6 +1,7 @@
 import {
   verifyBasicAuth,
   verifySession,
+  DEFAULT_ADMIN_COOKIE,
   type BasicCreds,
 } from '@abnxt/core/server';
 
@@ -10,8 +11,6 @@ export interface AuthResult {
   challenge?: Record<string, string>;
 }
 export type AbAuth = (req: Request) => AuthResult | Promise<AuthResult>;
-
-const SESSION_COOKIE = 'abnxt_session';
 
 export function abnxtBasicAuth(creds: BasicCreds): AbAuth {
   return (req) => {
@@ -27,7 +26,7 @@ export function abnxtCookieAuth(opts: {
   secret: string;
   cookieName?: string;
 }): AbAuth {
-  const name = opts.cookieName ?? SESSION_COOKIE;
+  const name = opts.cookieName ?? DEFAULT_ADMIN_COOKIE;
   return (req) => {
     const token = readCookie(req.headers.get('cookie'), name);
     return { ok: verifySession(token, opts.secret).valid };

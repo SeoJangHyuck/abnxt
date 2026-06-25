@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { createHmac } from 'node:crypto';
 import {
   verifyBasicAuth,
   verifyAdminKey,
   signSession,
   verifySession,
   randomToken,
+  DEFAULT_ADMIN_COOKIE,
 } from './auth';
 
 describe('verifyBasicAuth', () => {
@@ -109,11 +111,26 @@ describe('signSession / verifySession (HMAC)', () => {
     expect(verifySession(t, '').valid).toBe(false);
     expect(verifySession(t, 'short').valid).toBe(false);
   });
+  it('rejects a validly-signed token that lacks a numeric exp (every session must expire)', () => {
+    // signSession 우회: exp 없는 payload를 올바른 secret으로 직접 서명.
+    const b64url = (s: string) => Buffer.from(s).toString('base64url');
+    const data = b64url(JSON.stringify({ role: 'admin' }));
+    const sig = Buffer.from(
+      createHmac('sha256', secret).update(data).digest(),
+    ).toString('base64url');
+    expect(verifySession(`${data}.${sig}`, secret).valid).toBe(false);
+  });
 });
 
 describe('randomToken', () => {
   it('returns distinct hex tokens', () => {
     expect(randomToken()).not.toBe(randomToken());
     expect(randomToken()).toMatch(/^[0-9a-f]+$/);
+  });
+});
+
+describe('DEFAULT_ADMIN_COOKIE', () => {
+  it('is the shared default admin session cookie name (issue ↔ verify SoT)', () => {
+    expect(DEFAULT_ADMIN_COOKIE).toBe('abnxt_admin');
   });
 });

@@ -15,6 +15,7 @@ import {
 import {
   verifyBasicAuth,
   verifySession,
+  DEFAULT_ADMIN_COOKIE,
   type BasicCreds,
 } from '@abnxt/core/server';
 
@@ -85,7 +86,10 @@ export function defineAbnxtConfigHandler(opts: VueConfigRouteOptions) {
           );
         if (opts.auth.cookie) {
           return verifySession(
-            getCookie(event, opts.auth.cookie.cookieName ?? 'abnxt_session'),
+            getCookie(
+              event,
+              opts.auth.cookie.cookieName ?? DEFAULT_ADMIN_COOKIE,
+            ),
             opts.auth.cookie.secret,
           ).valid;
         }

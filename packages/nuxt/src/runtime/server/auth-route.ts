@@ -7,9 +7,12 @@ import {
   setResponseHeader,
   setResponseStatus,
 } from 'h3';
-import { verifyAdminKey, signSession } from '@abnxt/core/server';
+import {
+  verifyAdminKey,
+  signSession,
+  DEFAULT_ADMIN_COOKIE,
+} from '@abnxt/core/server';
 
-const DEFAULT_COOKIE = 'abnxt_admin';
 const MIN_SECRET_LENGTH = 16; // signSession과 동일(짧은 secret = env 누락 신호).
 
 /** 쿠키 set/delete 추상화(테스트 가능): h3 setCookie/deleteCookie를 주입식으로. */
@@ -134,7 +137,7 @@ const DEFAULT_MAX_AGE_MS = 86_400_000; // 24h.
  * 쿠키: httpOnly, sameSite='lax', secure=prod, path='/'.
  */
 export function defineAbnxtAuthHandler(opts: VueAuthRouteOptions = {}) {
-  const cookieName = opts.cookieName ?? DEFAULT_COOKIE;
+  const cookieName = opts.cookieName ?? DEFAULT_ADMIN_COOKIE;
   const maxAgeMs = opts.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   return defineEventHandler(async (event) => {
     const isProduction = process.env.NODE_ENV === 'production';

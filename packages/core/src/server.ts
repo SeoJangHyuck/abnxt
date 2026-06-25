@@ -15,6 +15,7 @@ export {
   signSession,
   verifySession,
   randomToken,
+  DEFAULT_ADMIN_COOKIE,
   type BasicCreds,
   type SignOptions,
   type VerifyResult,
