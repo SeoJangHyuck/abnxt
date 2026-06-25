@@ -21,6 +21,7 @@ export {
   type VariantKeyName,
 } from './variant-keys';
 export { hashToUnit } from './hash';
+export { OVERRIDE_COOKIE_PREFIX } from './cookies';
 export {
   loadConfig,
   EMPTY_CONFIG,

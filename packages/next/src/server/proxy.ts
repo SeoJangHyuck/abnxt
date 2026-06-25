@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createVisitorId, planAbProxy } from '@abnxt/core';
+import {
+  createVisitorId,
+  planAbProxy,
+  OVERRIDE_COOKIE_PREFIX,
+} from '@abnxt/core';
 
 const VID_COOKIE = 'abnxt_vid';
-const OVR_COOKIE_PREFIX = 'abnxt.ovr.';
 const VID_HEADER = 'x-abnxt-vid';
 const OVR_HEADER = 'x-abnxt-ovr';
 
@@ -14,8 +17,8 @@ export function createAbProxy(
   return (req) => {
     const overrideCookies: Record<string, string> = {};
     for (const c of req.cookies.getAll()) {
-      if (c.name.startsWith(OVR_COOKIE_PREFIX)) {
-        overrideCookies[c.name.slice(OVR_COOKIE_PREFIX.length)] = c.value;
+      if (c.name.startsWith(OVERRIDE_COOKIE_PREFIX)) {
+        overrideCookies[c.name.slice(OVERRIDE_COOKIE_PREFIX.length)] = c.value;
       }
     }
 
@@ -38,10 +41,13 @@ export function createAbProxy(
       res.cookies.set(vidCookieName, plan.vid, { sameSite: 'lax', path: '/' });
     }
     for (const [k, v] of Object.entries(plan.setOverrides)) {
-      res.cookies.set(OVR_COOKIE_PREFIX + k, v, { sameSite: 'lax', path: '/' });
+      res.cookies.set(OVERRIDE_COOKIE_PREFIX + k, v, {
+        sameSite: 'lax',
+        path: '/',
+      });
     }
     for (const k of plan.deleteOverrides) {
-      res.cookies.delete(OVR_COOKIE_PREFIX + k);
+      res.cookies.delete(OVERRIDE_COOKIE_PREFIX + k);
     }
 
     return res;

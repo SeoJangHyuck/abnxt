@@ -10,11 +10,14 @@ import type { H3Event } from 'h3';
 // Nitro에서 #imports 가상모듈 그래프 전체를 끌어와 호스트의 깨진 재export까지 노출시킨다.
 // fs/crypto를 쓰는 @abnxt/core/server는 서버 전용 미들웨어라 정적 import해도 클라에 번들되지 않는다.
 import { useRuntimeConfig } from '#imports';
-import { planAbProxy, createVisitorId } from '@abnxt/core';
+import {
+  planAbProxy,
+  createVisitorId,
+  OVERRIDE_COOKIE_PREFIX,
+} from '@abnxt/core';
 import { fsConfig } from '@abnxt/core/server';
 
 const VID_COOKIE = 'abnxt_vid';
-const OVR_COOKIE_PREFIX = 'abnxt.ovr.';
 
 /** 매핑 로직(테스트 가능): plan을 io에 적용. */
 export interface AbRequestIO {
@@ -30,8 +33,8 @@ export interface AbRequestIO {
 export function applyAbRequest(io: AbRequestIO): void {
   const overrideCookies: Record<string, string> = {};
   for (const [name, value] of Object.entries(io.getAllCookies())) {
-    if (name.startsWith(OVR_COOKIE_PREFIX))
-      overrideCookies[name.slice(OVR_COOKIE_PREFIX.length)] = value;
+    if (name.startsWith(OVERRIDE_COOKIE_PREFIX))
+      overrideCookies[name.slice(OVERRIDE_COOKIE_PREFIX.length)] = value;
   }
   const plan = planAbProxy({
     vidCookie: io.getCookie(VID_COOKIE),
@@ -41,8 +44,9 @@ export function applyAbRequest(io: AbRequestIO): void {
   });
   if (plan.setVidCookie) io.setCookie(VID_COOKIE, plan.vid);
   for (const [k, v] of Object.entries(plan.setOverrides))
-    io.setCookie(OVR_COOKIE_PREFIX + k, v);
-  for (const k of plan.deleteOverrides) io.deleteCookie(OVR_COOKIE_PREFIX + k);
+    io.setCookie(OVERRIDE_COOKIE_PREFIX + k, v);
+  for (const k of plan.deleteOverrides)
+    io.deleteCookie(OVERRIDE_COOKIE_PREFIX + k);
   io.setContext('abnxt', { vid: plan.vid, overrides: plan.forwardOverrides });
 }
 

@@ -9,13 +9,13 @@ import {
   loadConfig,
   createVisitorId,
   EMPTY_CONFIG,
+  OVERRIDE_COOKIE_PREFIX,
   type AbState,
   type AnalyticsFlags,
 } from '@abnxt/core';
 import { AB_INJECTION_KEY, buildRuntime } from './shared';
 
 const STICKY_COOKIE = 'abnxt_a';
-const OVR_COOKIE_PREFIX = 'abnxt.ovr.';
 
 export default defineNuxtPlugin(async (nuxtApp) => {
   const rc = useRuntimeConfig();
@@ -92,8 +92,8 @@ function readOverrideCookies(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(cookies)) {
-    if (k.startsWith(OVR_COOKIE_PREFIX))
-      out[k.slice(OVR_COOKIE_PREFIX.length)] = v;
+    if (k.startsWith(OVERRIDE_COOKIE_PREFIX))
+      out[k.slice(OVERRIDE_COOKIE_PREFIX.length)] = v;
   }
   return out;
 }

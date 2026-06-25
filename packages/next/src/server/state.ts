@@ -5,13 +5,13 @@ import {
   EMPTY_CONFIG,
   buildAbState,
   resolveFrom,
+  OVERRIDE_COOKIE_PREFIX,
 } from '@abnxt/core';
 import type { AbConfig } from '@abnxt/core';
 import type { AbState, ServerAbConfig } from '../types';
 
 const VID_COOKIE = 'abnxt_vid';
 const STICKY_COOKIE = 'abnxt_a';
-const OVR_COOKIE_PREFIX = 'abnxt.ovr.';
 const VID_HEADER = 'x-abnxt-vid';
 const OVR_HEADER = 'x-abnxt-ovr';
 
@@ -62,8 +62,8 @@ export const getServerAbState: () => Promise<AbState> = cache(async () => {
       }
       const out: Record<string, string> = {};
       for (const c of cookieStore.getAll()) {
-        if (c.name.startsWith(OVR_COOKIE_PREFIX)) {
-          out[c.name.slice(OVR_COOKIE_PREFIX.length)] = c.value;
+        if (c.name.startsWith(OVERRIDE_COOKIE_PREFIX)) {
+          out[c.name.slice(OVERRIDE_COOKIE_PREFIX.length)] = c.value;
         }
       }
       return out;

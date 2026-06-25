@@ -1,4 +1,4 @@
-const OVR_PREFIX = 'abnxt.ovr.';
+import { OVERRIDE_COOKIE_PREFIX } from '../cookies';
 
 export interface PreviewCookieIO {
   set(name: string, value: string): void;
@@ -24,11 +24,11 @@ export function setOverride(
   variant: string,
   io: PreviewCookieIO = browserPreviewIO(),
 ): void {
-  io.set(OVR_PREFIX + key, variant);
+  io.set(OVERRIDE_COOKIE_PREFIX + key, variant);
 }
 export function clearOverride(
   key: string,
   io: PreviewCookieIO = browserPreviewIO(),
 ): void {
-  io.remove(OVR_PREFIX + key);
+  io.remove(OVERRIDE_COOKIE_PREFIX + key);
 }
