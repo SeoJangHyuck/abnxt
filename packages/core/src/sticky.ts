@@ -8,7 +8,8 @@ export function parseStickyCookie(
   try {
     const obj = JSON.parse(decodeURIComponent(raw)) as unknown;
     if (!obj || typeof obj !== 'object') return {};
-    const out: Record<string, string> = {};
+    // null 프로토타입: builtin 이름 키의 상속 노출/프로토타입 오염 차단(렌더 안전).
+    const out = Object.create(null) as Record<string, string>;
     for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
       if (typeof v === 'string') out[k] = v;
     }

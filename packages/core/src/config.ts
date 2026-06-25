@@ -55,7 +55,9 @@ function normalize(
   if (!experimentsRaw || typeof experimentsRaw !== 'object') {
     throw new Error('invalid experiments map');
   }
-  const experiments: Record<string, Experiment> = {};
+  // null 프로토타입: 외부 JSON의 __proto__/constructor 등 builtin 이름 키가
+  // Object.prototype을 오염시키거나 조회 시 상속 함수로 새어 throw하는 것을 차단(렌더 안전).
+  const experiments = Object.create(null) as Record<string, Experiment>;
   for (const [key, value] of Object.entries(
     experimentsRaw as Record<string, unknown>,
   )) {

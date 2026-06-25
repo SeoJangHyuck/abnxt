@@ -121,3 +121,20 @@ describe('loadConfig migration & fallback', () => {
     expect(loadConfig(undefined, { fallback: fb })).toBe(fb);
   });
 });
+
+describe('loadConfig prototype-pollution safety', () => {
+  it('builds experiments without Object.prototype inheritance (render-safe lookups)', () => {
+    const cfg = loadConfig(valid);
+    // 미정의 builtin 이름 조회가 상속 함수가 아닌 undefined여야 한다(resolve throw 방지).
+    expect(cfg.experiments['constructor']).toBeUndefined();
+    expect(cfg.experiments['toString']).toBeUndefined();
+  });
+
+  it('does not pollute Object.prototype via malicious JSON keys', () => {
+    const raw = JSON.parse(
+      '{"version":1,"experiments":{"__proto__":{"polluted":true,"variants":[{"key":"A","weight":1}]},"real":{"variants":[{"key":"A","weight":1}]}}}',
+    );
+    loadConfig(raw);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});

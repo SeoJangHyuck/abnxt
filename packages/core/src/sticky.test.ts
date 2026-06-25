@@ -23,6 +23,21 @@ describe('parse/serialize sticky cookie', () => {
       parseStickyCookie(encodeURIComponent(JSON.stringify({ a: 'A', b: 5 }))),
     ).toEqual({ a: 'A' });
   });
+
+  it('parses without Object.prototype inheritance (render-safe lookups)', () => {
+    const r = parseStickyCookie(encodeURIComponent(JSON.stringify({ a: 'A' })));
+    expect(r['constructor']).toBeUndefined();
+    expect(r['toString']).toBeUndefined();
+  });
+
+  it('does not pollute Object.prototype via malicious keys', () => {
+    parseStickyCookie(
+      encodeURIComponent(
+        '{"__proto__":{"polluted":"x"},"constructor":"y","a":"A"}',
+      ),
+    );
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
 });
 
 describe('createStickyWriter', () => {
