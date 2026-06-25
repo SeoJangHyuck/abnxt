@@ -36,14 +36,7 @@ export {
   type AdminDict,
 } from './i18n';
 export { setOverride, clearOverride, type PreviewCookieIO } from './preview';
-export {
-  createLocalDraftStorage,
-  serializeConfig,
-  parseConfigJson,
-  loadInitialConfig,
-  type DraftStorage,
-  type ParseResult,
-} from './storage';
+export { serializeConfig, parseConfigJson, type ParseResult } from './storage';
 export {
   apiStorage,
   type ApiStorageOptions,
